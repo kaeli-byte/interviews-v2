@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Gemini Live API Demo</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1>Gemini Live API Demo</h1>
+        <div style="display: flex; gap: 10px; align-items: center">
+          <div id="status" class="status disconnected">Disconnected</div>
+        </div>
+      </header>
+
+      <main>
+        <!-- Auth/Connect Section (shown initially) -->
+        <div class="auth-section" id="auth-section">
+          <div
+            class="description-box"
+            style="
+              margin-bottom: 20px;
+              padding: 15px;
+              background: #f5f5f5;
+              border-radius: 8px;
+              text-align: left;
+            "
+          >
+            <h3>Features Enabled:</h3>
+            <ul style="margin: 10px 0 20px 20px">
+              <li>
+                <strong>Native Audio:</strong> Low latency voice interaction
+              </li>
+              <li>
+                <strong>Multilingual:</strong> Speak in different languages
+              </li>
+            </ul>
+            <p>
+              <em
+                >Note: When you connect, the app sends a text message to Gemini
+                instructing it to introduce itself and these features.</em
+              >
+            </p>
+          </div>
+          <p>Click below to connect.</p>
+          <button id="connectBtn" class="btn">Connect</button>
+        </div>
+
+        <!-- Session End Section -->
+        <div class="session-end-section hidden" id="session-end-section">
+          <h2>Session Ended</h2>
+          <button id="restartBtn" class="btn">Start New Session</button>
+        </div>
+
+        <!-- Dashboard Section -->
+        <div class="dashboard-section hidden" id="dashboard-section">
+          <!-- Navigation Tabs -->
+          <div class="nav-tabs">
+            <button class="tab-btn active" data-tab="documents">Documents</button>
+            <button class="tab-btn" data-tab="interviews">Interviews</button>
+            <button class="tab-btn" data-tab="settings">Settings</button>
+          </div>
+
+          <!-- Documents Tab -->
+          <div class="tab-content active" id="documents-tab">
+            <div class="tab-header">
+              <h2>Documents</h2>
+              <button id="uploadBtn" class="btn">Upload Document</button>
+            </div>
+
+            <!-- Document List -->
+            <div id="document-list" class="document-grid">
+              <div class="empty-state">
+                <h3>No documents yet</h3>
+                <p>Upload a resume or paste a job description to get started</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Interviews Tab -->
+          <div class="tab-content hidden" id="interviews-tab">
+            <div class="tab-header">
+              <h2>Interview Contexts</h2>
+              <button id="createContextBtn" class="btn">Create Interview</button>
+            </div>
+
+            <!-- Interview Context List -->
+            <div id="context-list" class="context-grid">
+              <div class="empty-state">
+                <h3>No interview contexts yet</h3>
+                <p>Create an interview context by binding a resume with a job description</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Settings Tab -->
+          <div class="tab-content hidden" id="settings-tab">
+            <h2>Settings</h2>
+            <p>Settings will be available in a future update.</p>
+          </div>
+        </div>
+
+        <!-- Live Interview App Section (existing Gemini Live UI) -->
+        <div class="app-section hidden" id="app-section">
+          <div class="app-grid">
+            <div class="left-panel">
+              <div class="video-container">
+                <div id="video-placeholder">Start camera to send video</div>
+                <video id="video-preview" autoplay playsinline muted></video>
+                <canvas id="video-canvas" style="display: none"></canvas>
+              </div>
+
+              <div class="controls">
+                <button id="micBtn" class="btn icon-btn">Start Mic</button>
+                <button id="cameraBtn" class="btn icon-btn">Start Camera</button>
+                <button id="screenBtn" class="btn icon-btn">Share Screen</button>
+                <button id="disconnectBtn" class="btn icon-btn danger">Disconnect</button>
+              </div>
+            </div>
+
+            <div class="right-panel">
+              <div class="chat-log" id="chat-log"></div>
+              <div class="input-area">
+                <input
+                  type="text"
+                  id="textInput"
+                  placeholder="Type a message..."
+                />
+                <button id="sendBtn" class="btn">Send</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <!-- Document Upload Modal -->
+    <div class="modal hidden" id="upload-modal">
+      <div class="modal-overlay"></div>
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Upload Document</h2>
+          <button class="modal-close" id="closeModal">&times;</button>
+        </div>
+
+        <!-- Tab Interface -->
+        <div class="upload-tabs">
+          <button class="upload-tab-btn active" data-upload-tab="file">Upload File</button>
+          <button class="upload-tab-btn" data-upload-tab="text">Paste Text</button>
+          <button class="upload-tab-btn" data-upload-tab="url">Import from URL</button>
+        </div>
+
+        <!-- File Upload Tab -->
+        <div class="upload-tab-content active" id="file-upload-tab">
+          <div class="drop-zone" id="drop-zone">
+            <div class="drop-zone-content">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="17 8 12 3 7 8"/>
+                <line x1="12" y1="3" x2="12" y2="15"/>
+              </svg>
+              <p>Drag and drop your resume here</p>
+              <p class="drop-zone-hint">Supports PDF and DOCX formats</p>
+            </div>
+          </div>
+          <div class="file-picker-wrapper">
+            <input type="file" id="file-input" accept=".pdf,.docx" hidden />
+            <button id="browseBtn" class="btn btn-secondary">Browse Files</button>
+          </div>
+        </div>
+
+        <!-- Text Upload Tab -->
+        <div class="upload-tab-content hidden" id="text-upload-tab">
+          <label for="jd-textarea">Paste Job Description</label>
+          <textarea id="jd-textarea" placeholder="Paste the job description text here..."></textarea>
+          <button id="submitTextBtn" class="btn">Extract Profile</button>
+        </div>
+
+        <!-- URL Upload Tab -->
+        <div class="upload-tab-content hidden" id="url-upload-tab">
+          <label for="jd-url">Job Description URL</label>
+          <input type="url" id="jd-url" placeholder="https://example.com/job-posting" />
+          <button id="submitUrlBtn" class="btn">Import from URL</button>
+        </div>
+
+        <!-- Processing Indicator -->
+        <div class="processing-indicator hidden" id="processing-indicator">
+          <div class="spinner"></div>
+          <p>Processing document...</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Profile View Modal -->
+    <div class="modal hidden" id="profile-modal">
+      <div class="modal-overlay"></div>
+      <div class="modal-content modal-large">
+        <div class="modal-header">
+          <h2 id="profile-title">Extracted Profile</h2>
+          <button class="modal-close" id="closeProfileModal">&times;</button>
+        </div>
+        <div id="profile-content" class="profile-content">
+          <!-- Dynamic content -->
+        </div>
+      </div>
+    </div>
+
+    <!-- Interview Context Creation Modal -->
+    <div class="modal hidden" id="context-modal">
+      <div class="modal-overlay"></div>
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Create Interview Context</h2>
+          <button class="modal-close" id="closeContextModal">&times;</button>
+        </div>
+        <div class="context-form">
+          <div class="form-group">
+            <label for="resume-select">Select Resume</label>
+            <select id="resume-select">
+              <option value="">Choose a resume...</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="jd-select">Select Job Description</label>
+            <select id="jd-select">
+              <option value="">Choose a job description...</option>
+            </select>
+          </div>
+          <button id="createContextSubmitBtn" class="btn btn-full">Create Interview</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="/static/media-handler.js"></script>
+    <script src="/static/gemini-client.js"></script>
+    <script src="/static/document-upload.js"></script>
+    <script src="/static/main.js"></script>
+  </body>
+</html>
