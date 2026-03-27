@@ -12,7 +12,13 @@
 
 ### Plans
 
-#### Plan 1.1: Document Ingestion + Interview Context
+**Plans:** 3 plans
+
+- [ ] 01-core-foundation-01-PLAN.md — Document ingestion, profile extraction, interview context creation
+- [ ] 01-core-foundation-02-PLAN.md — Live interview sessions with pause/resume/end controls
+- [ ] 01-core-foundation-03-PLAN.md — Authentication and user-scoped document management
+
+#### Plan 1.1: Document Ingestion + Interview Context (01-PLAN.md)
 - DOC-01: User can upload resume (PDF format)
 - DOC-02: User can upload resume (DOCX format)
 - DOC-03: User can input job description as text
@@ -25,7 +31,7 @@
 
 **Verification:** User can upload resume and JD, see extracted profiles, create interview context.
 
-#### Plan 1.2: Live Interview Sessions Foundation
+#### Plan 1.2: Live Interview Sessions Foundation (02-PLAN.md)
 - SESS-01: User can start new interview session
 - SESS-02: Session supports real-time voice via Gemini Live
 - SESS-03: Session captures transcript incrementally
@@ -35,7 +41,7 @@
 
 **Verification:** User can conduct complete voice interview with pause/resume.
 
-#### Plan 1.3: Authentication + User Management
+#### Plan 1.3: Authentication + User Management (03-PLAN.md)
 - USER-01: User can sign up with email/password
 - USER-02: User session persists across browser refresh
 - USER-03: User can view their documents
@@ -124,7 +130,7 @@ Phase 1 ────────────────────────
 
 | Phase | Requirements | Status |
 |-------|--------------|--------|
-| Phase 1 | 21 requirements | Pending |
+| Phase 1 | 19 requirements | Planned |
 | Phase 2 | 12 requirements | Pending |
 | Phase 3 | 7 requirements | Pending |
 
@@ -134,3 +140,4 @@ Phase 1 ────────────────────────
 
 *Roadmap created: 2026-03-27*
 *Granularity: coarse | Parallel execution enabled*
+*Phase 1 plans created: 2026-03-27*
