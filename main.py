@@ -5,18 +5,21 @@ import logging
 import os
 import uuid
 import shutil
-from datetime import datetime
+import re
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 
 import httpx
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from gemini_live import GeminiLive
+from passlib.context import CryptContext
+from jose import jwt, JWTError
 
 # Load environment variables
 load_dotenv()
@@ -31,7 +34,15 @@ logger = logging.getLogger(__name__)
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 MODEL = os.getenv("MODEL", "gemini-3.1-flash-live-preview")
 
-# Mock user ID for MVP (until auth is implemented)
+# JWT Configuration
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", "dev-secret-change-in-prod")
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days for MVP
+
+# Password hashing context
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+# Mock user ID for MVP demo (used when not authenticated)
 MOCK_USER_ID = "demo_user"
 
 # Uploads directory setup
@@ -39,6 +50,8 @@ UPLOADS_DIR = Path("uploads")
 UPLOADS_DIR.mkdir(exist_ok=True)
 
 # In-memory storage for MVP (upgrade to DB in Plan 1.3)
+users_db: Dict[str, Dict[str, Any]] = {}  # email -> user dict
+blacklisted_tokens: set = set()  # Token blacklist for logout
 documents_db: Dict[str, Dict[str, Any]] = {}
 profiles_db: Dict[str, Dict[str, Any]] = {}
 interview_contexts_db: Dict[str, Dict[str, Any]] = {}
@@ -57,6 +70,74 @@ VALID_TRANSITIONS = {
     SESSION_STATE_PAUSED: [SESSION_STATE_ACTIVE, SESSION_STATE_ENDED],
     SESSION_STATE_ENDED: []
 }
+
+
+# ============================================================================
+# Authentication Helper Functions
+# ============================================================================
+
+def hash_password(password: str) -> str:
+    """Hash a password using bcrypt."""
+    return pwd_context.hash(password)
+
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Verify a password against a hash."""
+    return pwd_context.verify(plain_password, hashed_password)
+
+
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
+    """Create a JWT access token."""
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+
+def get_current_user(authorization: Optional[str] = Header(None)) -> Dict[str, Any]:
+    """
+    Dependency to get current user from JWT token.
+    Raises 401 if token is invalid or user not found.
+    """
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Authorization header required")
+
+    # Extract token from "Bearer {token}" format
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Invalid authorization format")
+
+    token = authorization.split(" ")[1]
+
+    # Check if token is blacklisted
+    if token in blacklisted_tokens:
+        raise HTTPException(status_code=401, detail="Token has been revoked")
+
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        email: str = payload.get("sub")
+        if email is None:
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+        # Find user in database
+        user = users_db.get(email)
+        if not user:
+            raise HTTPException(status_code=401, detail="User not found")
+
+        return user
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+
+def validate_email(email: str) -> bool:
+    """Basic email format validation."""
+    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return re.match(pattern, email) is not None
+
 
 # Initialize FastAPI
 app = FastAPI()
@@ -204,14 +285,149 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str = None):
 
 
 # ============================================================================
+# Authentication API Endpoints
+# ============================================================================
+
+@app.post("/api/auth/signup")
+async def signup(data: dict):
+    """
+    Sign up a new user.
+    Request body: {"email": str, "password": str}
+    Returns: {user: {id, email}, token, expires_at}
+    """
+    email = data.get("email", "").strip().lower()
+    password = data.get("password", "")
+
+    # Validate email format
+    if not validate_email(email):
+        raise HTTPException(status_code=400, detail="Invalid email format")
+
+    # Validate password length
+    if len(password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+
+    # Check if email already exists
+    if email in users_db:
+        raise HTTPException(status_code=409, detail="Email already registered")
+
+    # Create user
+    user_id = uuid.uuid4().hex
+    hashed_pw = hash_password(password)
+
+    user = {
+        "id": user_id,
+        "email": email,
+        "hashed_password": hashed_pw,
+        "created_at": datetime.utcnow().isoformat()
+    }
+    users_db[email] = user
+
+    # Generate JWT token
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    token = create_access_token(
+        data={"sub": email, "user_id": user_id},
+        expires_delta=access_token_expires
+    )
+
+    expires_at = datetime.utcnow() + access_token_expires
+
+    return JSONResponse(content={
+        "user": {"id": user_id, "email": email},
+        "token": token,
+        "expires_at": expires_at.isoformat()
+    })
+
+
+@app.post("/api/auth/login")
+async def login(data: dict):
+    """
+    Login with email and password.
+    Request body: {"email": str, "password": str}
+    Returns: {user: {id, email}, token, expires_at}
+    """
+    email = data.get("email", "").strip().lower()
+    password = data.get("password", "")
+
+    # Find user
+    user = users_db.get(email)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    # Verify password
+    if not verify_password(password, user["hashed_password"]):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    # Generate JWT token
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    token = create_access_token(
+        data={"sub": email, "user_id": user["id"]},
+        expires_delta=access_token_expires
+    )
+
+    expires_at = datetime.utcnow() + access_token_expires
+
+    return JSONResponse(content={
+        "user": {"id": user["id"], "email": user["email"]},
+        "token": token,
+        "expires_at": expires_at.isoformat()
+    })
+
+
+@app.post("/api/auth/logout")
+async def logout(authorization: Optional[str] = Header(None)):
+    """
+    Logout current user.
+    Request header: Authorization: Bearer {token}
+    Returns: {success: true}
+    """
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Authorization header required")
+
+    token = authorization.split(" ")[1]
+
+    # Add token to blacklist
+    blacklisted_tokens.add(token)
+
+    return JSONResponse(content={"success": True})
+
+
+@app.get("/api/auth/me")
+async def get_me(current_user: Dict[str, Any] = Depends(get_current_user)):
+    """
+    Get current user info.
+    Request header: Authorization: Bearer {token}
+    Returns: {user: {id, email}}
+    """
+    return JSONResponse(content={
+        "user": {"id": current_user["id"], "email": current_user["email"]}
+    })
+
+
+# ============================================================================
 # Document Upload API Endpoints
 # ============================================================================
 
-def get_user_dir(user_id: str = MOCK_USER_ID) -> Path:
+def get_user_dir(user_id: str) -> Path:
     """Get or create user's upload directory."""
     user_dir = UPLOADS_DIR / user_id
     user_dir.mkdir(parents=True, exist_ok=True)
     return user_dir
+
+
+def get_user_dir_optional(authorization: Optional[str] = Header(None)) -> Path:
+    """Get user directory - authenticated or demo mode."""
+    if authorization and authorization.startswith("Bearer "):
+        try:
+            token = authorization.split(" ")[1]
+            if token not in blacklisted_tokens:
+                payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+                email = payload.get("sub")
+                if email and email in users_db:
+                    return get_user_dir(users_db[email]["id"])
+        except JWTError:
+            pass
+    # Fallback to demo user
+    return get_user_dir(MOCK_USER_ID)
 
 
 def read_pdf_content(file_path: Path) -> str:
@@ -241,11 +457,14 @@ def read_docx_content(file_path: Path) -> str:
 
 
 @app.post("/api/documents/resume")
-async def upload_resume(file: UploadFile = File(...)):
+async def upload_resume(file: UploadFile = File(...), current_user: Dict[str, Any] = Depends(get_current_user)):
     """
     Upload a resume (PDF or DOCX format).
+    Requires authentication.
     Returns document_id, filename, type, size, created_at.
     """
+    user_id = current_user["id"]
+
     # Validate file type
     allowed_extensions = {".pdf", ".docx"}
     file_ext = Path(file.filename or "").suffix.lower()
@@ -260,9 +479,11 @@ async def upload_resume(file: UploadFile = File(...)):
     unique_id = uuid.uuid4().hex[:8]
     safe_filename = f"{unique_id}_{file.filename}"
 
-    # Save to user's upload directory
-    user_dir = get_user_dir()
-    file_path = user_dir / safe_filename
+    # Create user's resume directory
+    user_dir = get_user_dir(user_id)
+    resumes_dir = user_dir / "resumes"
+    resumes_dir.mkdir(exist_ok=True)
+    file_path = resumes_dir / safe_filename
 
     try:
         content = await file.read()
@@ -282,7 +503,7 @@ async def upload_resume(file: UploadFile = File(...)):
         "file_type": file_ext[1:].upper(),  # PDF or DOCX
         "size": len(content),
         "created_at": datetime.utcnow().isoformat(),
-        "user_id": MOCK_USER_ID,
+        "user_id": user_id,
         "file_path": str(file_path)
     }
     documents_db[doc_id] = document
@@ -291,12 +512,14 @@ async def upload_resume(file: UploadFile = File(...)):
 
 
 @app.post("/api/documents/job-description")
-async def upload_job_description(data: dict):
+async def upload_job_description(data: dict, current_user: Dict[str, Any] = Depends(get_current_user)):
     """
     Upload a job description (text or URL).
+    Requires authentication.
     Request body: {"text"?: string, "url"?: string}
     Returns document_id, content_preview, source_type.
     """
+    user_id = current_user["id"]
     text = data.get("text")
     url = data.get("url")
 
@@ -330,8 +553,11 @@ async def upload_job_description(data: dict):
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     safe_filename = f"jd_{timestamp}.txt"
 
-    user_dir = get_user_dir()
-    file_path = user_dir / safe_filename
+    # Create user's job descriptions directory
+    user_dir = get_user_dir(user_id)
+    jd_dir = user_dir / "job-descriptions"
+    jd_dir.mkdir(exist_ok=True)
+    file_path = jd_dir / safe_filename
 
     try:
         with open(file_path, "w", encoding="utf-8") as f:
@@ -351,7 +577,7 @@ async def upload_job_description(data: dict):
         "content": text,
         "content_preview": content_preview,
         "created_at": datetime.utcnow().isoformat(),
-        "user_id": MOCK_USER_ID,
+        "user_id": user_id,
         "file_path": str(file_path)
     }
     documents_db[doc_id] = document
@@ -365,11 +591,13 @@ async def upload_job_description(data: dict):
 
 
 @app.get("/api/documents")
-async def list_documents():
+async def list_documents(current_user: Dict[str, Any] = Depends(get_current_user)):
     """
     List all documents for the current user.
+    Requires authentication.
     Returns: [{document_id, filename, type, created_at}]
     """
+    user_id = current_user["id"]
     user_docs = [
         {
             "document_id": doc["document_id"],
@@ -379,21 +607,28 @@ async def list_documents():
             "created_at": doc["created_at"]
         }
         for doc in documents_db.values()
-        if doc.get("user_id") == MOCK_USER_ID
+        if doc.get("user_id") == user_id
     ]
     return JSONResponse(content=user_docs)
 
 
 @app.delete("/api/documents/{document_id}")
-async def delete_document(document_id: str):
+async def delete_document(document_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
     """
     Delete a document by ID.
+    Requires authentication. Verifies document belongs to user.
     Returns: {success: true}
     """
+    user_id = current_user["id"]
+
     if document_id not in documents_db:
         raise HTTPException(status_code=404, detail="Document not found")
 
     doc = documents_db[document_id]
+
+    # Verify document belongs to user
+    if doc.get("user_id") != user_id:
+        raise HTTPException(status_code=403, detail="Not authorized to delete this document")
 
     # Delete file from filesystem
     file_path = Path(doc.get("file_path", ""))
@@ -452,12 +687,14 @@ Content to analyze:
 
 
 @app.post("/api/profiles/extract-from-resume")
-async def extract_resume_profile(data: dict):
+async def extract_resume_profile(data: dict, current_user: Dict[str, Any] = Depends(get_current_user)):
     """
     Extract candidate profile from resume using Gemini AI.
+    Requires authentication.
     Request body: {"document_id": str}
     Returns: {profile_id, name, headline, skills, experience, education, confidence_score}
     """
+    user_id = current_user["id"]
     document_id = data.get("document_id")
 
     if not document_id:
@@ -467,6 +704,10 @@ async def extract_resume_profile(data: dict):
         raise HTTPException(status_code=404, detail="Document not found")
 
     doc = documents_db[document_id]
+
+    # Verify document belongs to user
+    if doc.get("user_id") != user_id:
+        raise HTTPException(status_code=403, detail="Not authorized to access this document")
 
     if doc["type"] != "resume":
         raise HTTPException(status_code=400, detail="Document is not a resume")
@@ -543,7 +784,7 @@ async def extract_resume_profile(data: dict):
         "education": extracted_data.get("education", []),
         "confidence_score": extracted_data.get("confidence_score", 0),
         "created_at": datetime.utcnow().isoformat(),
-        "user_id": MOCK_USER_ID
+        "user_id": user_id
     }
     profiles_db[profile_id] = profile
 
@@ -551,12 +792,14 @@ async def extract_resume_profile(data: dict):
 
 
 @app.post("/api/profiles/extract-from-jd")
-async def extract_job_profile(data: dict):
+async def extract_job_profile(data: dict, current_user: Dict[str, Any] = Depends(get_current_user)):
     """
     Extract job profile from job description using Gemini AI.
+    Requires authentication.
     Request body: {"document_id": str}
     Returns: {profile_id, company, role, requirements, nice_to_have, responsibilities}
     """
+    user_id = current_user["id"]
     document_id = data.get("document_id")
 
     if not document_id:
@@ -566,6 +809,10 @@ async def extract_job_profile(data: dict):
         raise HTTPException(status_code=404, detail="Document not found")
 
     doc = documents_db[document_id]
+
+    # Verify document belongs to user
+    if doc.get("user_id") != user_id:
+        raise HTTPException(status_code=403, detail="Not authorized to access this document")
 
     if doc["type"] != "job_description":
         raise HTTPException(status_code=400, detail="Document is not a job description")
@@ -618,7 +865,7 @@ async def extract_job_profile(data: dict):
         "nice_to_have": extracted_data.get("nice_to_have", []),
         "responsibilities": extracted_data.get("responsibilities", []),
         "created_at": datetime.utcnow().isoformat(),
-        "user_id": MOCK_USER_ID
+        "user_id": user_id
     }
     profiles_db[profile_id] = profile
 
@@ -626,15 +873,23 @@ async def extract_job_profile(data: dict):
 
 
 @app.get("/api/profiles/{profile_id}")
-async def get_profile(profile_id: str):
+async def get_profile(profile_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
     """
     Retrieve an extracted profile by ID.
+    Requires authentication. Verifies profile belongs to user.
     Returns: Profile data (resume or job_description)
     """
+    user_id = current_user["id"]
+
     if profile_id not in profiles_db:
         raise HTTPException(status_code=404, detail="Profile not found")
 
     profile = profiles_db[profile_id]
+
+    # Verify profile belongs to user
+    if profile.get("user_id") != user_id:
+        raise HTTPException(status_code=403, detail="Not authorized to access this profile")
+
     return JSONResponse(content=profile)
 
 
@@ -643,12 +898,14 @@ async def get_profile(profile_id: str):
 # ============================================================================
 
 @app.post("/api/interview-contexts")
-async def create_interview_context(data: dict):
+async def create_interview_context(data: dict, current_user: Dict[str, Any] = Depends(get_current_user)):
     """
     Create interview context binding resume profile + job profile.
+    Requires authentication.
     Request body: {"resume_profile_id": str, "job_profile_id": str}
     Returns: {context_id, resume_profile, job_profile, created_at}
     """
+    user_id = current_user["id"]
     resume_profile_id = data.get("resume_profile_id")
     job_profile_id = data.get("job_profile_id")
 
@@ -663,6 +920,13 @@ async def create_interview_context(data: dict):
 
     resume_profile = profiles_db[resume_profile_id]
     job_profile = profiles_db[job_profile_id]
+
+    # Verify profiles belong to user
+    if resume_profile.get("user_id") != user_id:
+        raise HTTPException(status_code=403, detail="Not authorized to access this resume profile")
+
+    if job_profile.get("user_id") != user_id:
+        raise HTTPException(status_code=403, detail="Not authorized to access this job profile")
 
     if resume_profile["type"] != "resume":
         raise HTTPException(status_code=400, detail="First profile must be a resume profile")
@@ -692,7 +956,7 @@ async def create_interview_context(data: dict):
             "responsibilities": job_profile["responsibilities"]
         },
         "created_at": datetime.utcnow().isoformat(),
-        "user_id": MOCK_USER_ID
+        "user_id": user_id
     }
     interview_contexts_db[context_id] = context
 
@@ -700,11 +964,13 @@ async def create_interview_context(data: dict):
 
 
 @app.get("/api/interview-contexts")
-async def list_interview_contexts():
+async def list_interview_contexts(current_user: Dict[str, Any] = Depends(get_current_user)):
     """
     List all interview contexts for the current user.
+    Requires authentication.
     Returns: [{context_id, resume_profile_summary, job_profile_summary, created_at}]
     """
+    user_id = current_user["id"]
     contexts = [
         {
             "context_id": ctx["context_id"],
@@ -719,21 +985,29 @@ async def list_interview_contexts():
             "created_at": ctx["created_at"]
         }
         for ctx in interview_contexts_db.values()
-        if ctx.get("user_id") == MOCK_USER_ID
+        if ctx.get("user_id") == user_id
     ]
     return JSONResponse(content=contexts)
 
 
 @app.get("/api/interview-contexts/{context_id}")
-async def get_interview_context(context_id: str):
+async def get_interview_context(context_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
     """
     Get full interview context details by ID.
+    Requires authentication. Verifies context belongs to user.
     Returns: {context_id, resume_profile, job_profile, created_at}
     """
+    user_id = current_user["id"]
+
     if context_id not in interview_contexts_db:
         raise HTTPException(status_code=404, detail="Context not found")
 
     context = interview_contexts_db[context_id]
+
+    # Verify context belongs to user
+    if context.get("user_id") != user_id:
+        raise HTTPException(status_code=403, detail="Not authorized to access this context")
+
     return JSONResponse(content=context)
 
 
@@ -747,12 +1021,14 @@ def is_valid_transition(current_state: str, new_state: str) -> bool:
 
 
 @app.post("/api/sessions")
-async def create_session(data: dict):
+async def create_session(data: dict, current_user: Dict[str, Any] = Depends(get_current_user)):
     """
     Create a new interview session.
+    Requires authentication.
     Request body: {"context_id": str, "interview_type"?: "hr" | "hiring"}
     Returns: {session_id, context, state}
     """
+    user_id = current_user["id"]
     context_id = data.get("context_id")
     interview_type = data.get("interview_type", "hiring")
 
@@ -763,6 +1039,10 @@ async def create_session(data: dict):
         raise HTTPException(status_code=404, detail="Interview context not found")
 
     context = interview_contexts_db[context_id]
+
+    # Verify context belongs to user
+    if context.get("user_id") != user_id:
+        raise HTTPException(status_code=403, detail="Not authorized to access this context")
 
     # Create session
     session_id = uuid.uuid4().hex
@@ -776,7 +1056,7 @@ async def create_session(data: dict):
         "transcript": [],
         "started_at": now,
         "updated_at": now,
-        "user_id": MOCK_USER_ID
+        "user_id": user_id
     }
     sessions_db[session_id] = session
 
@@ -792,15 +1072,23 @@ async def create_session(data: dict):
 
 
 @app.get("/api/sessions/{session_id}")
-async def get_session(session_id: str):
+async def get_session(session_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
     """
     Retrieve session details by ID.
+    Requires authentication. Verifies session belongs to user.
     Returns: {session_id, context_id, state, transcript[], started_at, updated_at}
     """
+    user_id = current_user["id"]
+
     if session_id not in sessions_db:
         raise HTTPException(status_code=404, detail="Session not found")
 
     session = sessions_db[session_id]
+
+    # Verify session belongs to user
+    if session.get("user_id") != user_id:
+        raise HTTPException(status_code=403, detail="Not authorized to access this session")
+
     return JSONResponse(content={
         "session_id": session["session_id"],
         "context_id": session["context_id"],
@@ -812,16 +1100,24 @@ async def get_session(session_id: str):
 
 
 @app.patch("/api/sessions/{session_id}")
-async def update_session(session_id: str, data: dict):
+async def update_session(session_id: str, data: dict, current_user: Dict[str, Any] = Depends(get_current_user)):
     """
     Update session state.
+    Requires authentication. Verifies session belongs to user.
     Request body: {"action": "pause" | "resume" | "end"}
     Returns: {session_id, state, previous_state}
     """
+    user_id = current_user["id"]
+
     if session_id not in sessions_db:
         raise HTTPException(status_code=404, detail="Session not found")
 
     session = sessions_db[session_id]
+
+    # Verify session belongs to user
+    if session.get("user_id") != user_id:
+        raise HTTPException(status_code=403, detail="Not authorized to modify this session")
+
     current_state = session["state"]
     action = data.get("action")
 
@@ -859,15 +1155,23 @@ async def update_session(session_id: str, data: dict):
 
 
 @app.delete("/api/sessions/{session_id}")
-async def delete_session(session_id: str):
+async def delete_session(session_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
     """
     End and cleanup session.
+    Requires authentication. Verifies session belongs to user.
     Returns: {success: true}
     """
+    user_id = current_user["id"]
+
     if session_id not in sessions_db:
         raise HTTPException(status_code=404, detail="Session not found")
 
     session = sessions_db[session_id]
+
+    # Verify session belongs to user
+    if session.get("user_id") != user_id:
+        raise HTTPException(status_code=403, detail="Not authorized to delete this session")
+
     session["state"] = SESSION_STATE_ENDED
     session["updated_at"] = datetime.utcnow().isoformat()
 

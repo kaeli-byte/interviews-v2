@@ -8,3 +8,5 @@ pypdf
 python-docx
 httpx
 beautifulsoup4
+passlib[bcrypt]
+python-jose[cryptography]
