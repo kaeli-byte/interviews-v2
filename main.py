@@ -18,8 +18,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from gemini_live import GeminiLive
-from passlib.context import CryptContext
 from jose import jwt, JWTError
+import bcrypt
 
 # Load environment variables
 load_dotenv()
@@ -38,9 +38,6 @@ MODEL = os.getenv("MODEL", "gemini-3.1-flash-live-preview")
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "dev-secret-change-in-prod")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days for MVP
-
-# Password hashing context
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # Mock user ID for MVP demo (used when not authenticated)
 MOCK_USER_ID = "demo_user"
@@ -78,12 +75,14 @@ VALID_TRANSITIONS = {
 
 def hash_password(password: str) -> str:
     """Hash a password using bcrypt."""
-    return pwd_context.hash(password)
+    salt = bcrypt.gensalt()
+    hashed = bcrypt.hashpw(password.encode('utf-8'), salt)
+    return hashed.decode('utf-8')
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password against a hash."""
-    return pwd_context.verify(plain_password, hashed_password)
+    return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
