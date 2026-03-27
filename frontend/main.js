@@ -33,9 +33,27 @@ const createContextSubmitBtn = document.getElementById("createContextSubmitBtn")
 const tabBtns = document.querySelectorAll(".tab-btn");
 const tabContents = document.querySelectorAll(".tab-content");
 
+// Interview session elements
+const interviewSessionSection = document.getElementById("interview-session-section");
+const sessionStatusDiv = document.getElementById("session-status");
+const sessionStatusLabel = sessionStatusDiv?.querySelector(".status-text");
+const startInterviewBtn = document.getElementById("startInterviewBtn");
+const pauseInterviewBtn = document.getElementById("pauseInterviewBtn");
+const resumeInterviewBtn = document.getElementById("resumeInterviewBtn");
+const endInterviewBtn = document.getElementById("endInterviewBtn");
+const transcriptLog = document.getElementById("transcript-log");
+const transcriptCount = document.getElementById("transcript-count");
+const sessionEndSummary = document.getElementById("session-end-summary");
+const sessionSummaryText = document.getElementById("session-summary-text");
+const viewTranscriptBtn = document.getElementById("viewTranscriptBtn");
+const closeSessionBtn = document.getElementById("closeSessionBtn");
+
 let currentGeminiMessageDiv = null;
 let currentUserMessageDiv = null;
 let currentContextId = null;
+
+// Interview session instance
+let interviewSession = null;
 
 const mediaHandler = new MediaHandler();
 const geminiClient = new GeminiClient({
@@ -411,6 +429,276 @@ function showSessionEnd() {
 restartBtn.onclick = () => {
   resetUI();
   showDashboard();
+};
+
+// ============================================================================
+// Interview Session Lifecycle
+// ============================================================================
+
+/**
+ * Update interview session UI state
+ * @param {string} state - 'active' | 'paused' | 'ended' | 'connecting'
+ */
+function updateSessionState(state) {
+  if (!sessionStatusDiv || !sessionStatusLabel) return;
+
+  // Update status indicator classes
+  sessionStatusDiv.classList.remove('active', 'paused', 'ended', 'connecting');
+  sessionStatusDiv.classList.add(state);
+
+  // Update status text
+  const statusText = state.charAt(0).toUpperCase() + state.slice(1);
+  sessionStatusLabel.textContent = statusText;
+
+  // Update button visibility
+  if (startInterviewBtn) startInterviewBtn.classList.toggle('hidden', state !== null);
+  if (pauseInterviewBtn) pauseInterviewBtn.classList.toggle('hidden', state !== 'active');
+  if (resumeInterviewBtn) resumeInterviewBtn.classList.toggle('hidden', state !== 'paused');
+  if (endInterviewBtn) endInterviewBtn.classList.toggle('hidden', state !== 'active' && state !== 'paused');
+
+  console.log('Session state updated:', state);
+}
+
+/**
+ * Add transcript entry to the log
+ * @param {string} speaker - 'user' | 'gemini'
+ * @param {string} text
+ * @param {string} timestamp
+ */
+function addTranscriptEntry(speaker, text, timestamp) {
+  if (!transcriptLog) return;
+
+  const entry = document.createElement('div');
+  entry.className = `transcript-entry ${speaker}`;
+
+  const speakerLabel = speaker === 'user' ? 'You' : 'Interviewer';
+  const timeStr = timestamp ? new Date(timestamp).toLocaleTimeString() : new Date().toLocaleTimeString();
+
+  entry.innerHTML = `
+    <div class="speaker-label">${speakerLabel} <span class="timestamp">${timeStr}</span></div>
+    <p class="text">${text}</p>
+  `;
+
+  transcriptLog.appendChild(entry);
+  transcriptLog.scrollTop = transcriptLog.scrollHeight;
+
+  // Update count
+  if (transcriptCount) {
+    const count = transcriptLog.querySelectorAll('.transcript-entry').length;
+    transcriptCount.textContent = `${count} message${count !== 1 ? 's' : ''}`;
+  }
+}
+
+/**
+ * Show session end summary
+ * @param {Array} transcript
+ */
+function showSessionEndSummary(transcript) {
+  if (!sessionEndSummary) return;
+
+  sessionEndSummary.classList.remove('hidden');
+  if (sessionSummaryText) {
+    const count = transcript ? transcript.length : 0;
+    sessionSummaryText.textContent = `You exchanged ${count} message${count !== 1 ? 's' : ''}`;
+  }
+
+  // Hide session controls
+  if (pauseInterviewBtn) pauseInterviewBtn.classList.add('hidden');
+  if (resumeInterviewBtn) resumeInterviewBtn.classList.add('hidden');
+  if (endInterviewBtn) endInterviewBtn.classList.add('hidden');
+}
+
+/**
+ * Start interview session for a context
+ * @param {string} contextId
+ */
+async function startInterviewSession(contextId) {
+  try {
+    updateSessionState('connecting');
+
+    // Create InterviewSession instance
+    interviewSession = new InterviewSession();
+
+    // Set up callbacks
+    interviewSession.onStateChange = (state) => {
+      updateSessionState(state);
+    };
+
+    interviewSession.onTranscriptUpdate = (entries) => {
+      entries.forEach(entry => {
+        addTranscriptEntry(entry.speaker, entry.text, entry.timestamp);
+      });
+    };
+
+    interviewSession.onSessionEnd = (transcript) => {
+      showSessionEndSummary(transcript);
+    };
+
+    // Start session via API
+    const result = await interviewSession.startSession(contextId);
+    console.log('Interview session started:', result);
+
+    // Connect WebSocket
+    interviewSession.connectWebSocket({
+      onOpen: () => {
+        console.log('Interview WebSocket connected');
+        updateSessionState('active');
+
+        // Send initial interviewer introduction
+        const introPrompt = `System: You are conducting a job interview. The candidate's profile and job description have been loaded. Begin the interview with a friendly greeting and ask your first question.`;
+        interviewSession.sendText(introPrompt);
+      },
+      onMessage: (msg) => {
+        // Handle transcription messages
+        if (msg.type === 'user' || msg.type === 'gemini') {
+          addTranscriptEntry(msg.type, msg.text, null);
+        }
+      },
+      onAudio: async (blob) => {
+        // Play audio through media handler
+        const arrayBuffer = await blob.arrayBuffer();
+        mediaHandler.playAudio(arrayBuffer);
+      },
+      onClose: () => {
+        console.log('Interview WebSocket closed');
+        updateSessionState('ended');
+      },
+      onError: (error) => {
+        console.error('Interview WebSocket error:', error);
+      }
+    });
+
+    // Show interview session section
+    if (interviewSessionSection) {
+      interviewSessionSection.classList.remove('hidden');
+    }
+
+  } catch (error) {
+    console.error('Start interview session error:', error);
+    alert('Failed to start interview: ' + error.message);
+    updateSessionState(null);
+  }
+}
+
+/**
+ * Pause current interview session
+ */
+async function pauseInterview() {
+  if (!interviewSession) return;
+
+  try {
+    await interviewSession.pauseSession();
+    updateSessionState('paused');
+  } catch (error) {
+    console.error('Pause interview error:', error);
+    alert('Failed to pause interview: ' + error.message);
+  }
+}
+
+/**
+ * Resume paused interview session
+ */
+async function resumeInterview() {
+  if (!interviewSession) return;
+
+  try {
+    await interviewSession.resumeSession();
+    updateSessionState('active');
+  } catch (error) {
+    console.error('Resume interview error:', error);
+    alert('Failed to resume interview: ' + error.message);
+  }
+}
+
+/**
+ * End current interview session
+ */
+async function endInterview() {
+  if (!interviewSession) return;
+
+  if (!confirm('Are you sure you want to end this interview session?')) {
+    return;
+  }
+
+  try {
+    await interviewSession.endSession();
+    // State update and summary handled by onSessionEnd callback
+  } catch (error) {
+    console.error('End interview error:', error);
+    alert('Failed to end interview: ' + error.message);
+  }
+}
+
+/**
+ * Close session and return to dashboard
+ */
+function closeInterviewSession() {
+  if (interviewSession) {
+    interviewSession.disconnect();
+    interviewSession = null;
+  }
+
+  // Hide session section
+  if (interviewSessionSection) {
+    interviewSessionSection.classList.add('hidden');
+  }
+
+  // Hide end summary
+  if (sessionEndSummary) {
+    sessionEndSummary.classList.add('hidden');
+  }
+
+  // Clear transcript
+  if (transcriptLog) {
+    transcriptLog.innerHTML = '';
+  }
+
+  if (transcriptCount) {
+    transcriptCount.textContent = '0 messages';
+  }
+
+  updateSessionState(null);
+}
+
+// Interview session event handlers
+if (startInterviewBtn) {
+  startInterviewBtn.onclick = () => {
+    if (currentContextId) {
+      startInterviewSession(currentContextId);
+    } else {
+      alert('Please create or select an interview context first');
+    }
+  };
+}
+
+if (pauseInterviewBtn) {
+  pauseInterviewBtn.onclick = pauseInterview;
+}
+
+if (resumeInterviewBtn) {
+  resumeInterviewBtn.onclick = resumeInterview;
+}
+
+if (endInterviewBtn) {
+  endInterviewBtn.onclick = endInterview;
+}
+
+if (viewTranscriptBtn) {
+  viewTranscriptBtn.onclick = () => {
+    if (transcriptLog) {
+      transcriptLog.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+}
+
+if (closeSessionBtn) {
+  closeSessionBtn.onclick = closeInterviewSession;
+}
+
+// Export function for document-upload.js to trigger interview
+window.startInterviewSession = startInterviewSession;
+window.setInterviewContext = (contextId) => {
+  currentContextId = contextId;
 };
 
 // ============================================================================

@@ -506,10 +506,16 @@ class DocumentUpload {
   }
 
   startInterview(contextId) {
-    // For now, just switch to the interview tab and connect
-    // In future phases, this will pass context to the Gemini session
-    console.log('Starting interview with context:', contextId);
-    alert('Interview starting with context: ' + contextId + '\n\n(In future phases, this will configure the AI interviewer with your profiles)');
+    // Use the global interview session handler
+    if (typeof window.startInterviewSession === 'function') {
+      window.setInterviewContext(contextId);
+      window.startInterviewSession(contextId);
+    } else {
+      // Fallback: set context and show alert
+      console.log('Starting interview with context:', contextId);
+      window.setInterviewContext?.(contextId);
+      alert('Interview starting with context: ' + contextId);
+    }
   }
 
   // Utility methods
