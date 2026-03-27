@@ -344,6 +344,334 @@ async def delete_document(document_id: str):
     return JSONResponse(content={"success": True})
 
 
+# ============================================================================
+# Profile Extraction API Endpoints (using Gemini AI)
+# ============================================================================
+
+async def extract_with_gemini(content: str, prompt: str, response_schema: dict) -> dict:
+    """
+    Extract structured data using Gemini API.
+    """
+    from google import genai
+    from google.genai import types
+
+    client = genai.Client(api_key=GEMINI_API_KEY)
+
+    full_prompt = f"""{prompt}
+
+Return ONLY valid JSON matching this schema. Do not include any explanation or markdown formatting.
+
+Content to analyze:
+---
+{content}
+---
+"""
+
+    try:
+        response = client.models.generate_content(
+            model=MODEL,
+            contents=full_prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=response_schema,
+            )
+        )
+
+        if response.text:
+            return json.loads(response.text)
+        else:
+            raise HTTPException(status_code=500, detail="Gemini returned empty response")
+    except Exception as e:
+        logger.error(f"Gemini extraction error: {e}")
+        raise HTTPException(status_code=500, detail=f"Profile extraction failed: {str(e)}")
+
+
+@app.post("/api/profiles/extract-from-resume")
+async def extract_resume_profile(data: dict):
+    """
+    Extract candidate profile from resume using Gemini AI.
+    Request body: {"document_id": str}
+    Returns: {profile_id, name, headline, skills, experience, education, confidence_score}
+    """
+    document_id = data.get("document_id")
+
+    if not document_id:
+        raise HTTPException(status_code=400, detail="document_id is required")
+
+    if document_id not in documents_db:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    doc = documents_db[document_id]
+
+    if doc["type"] != "resume":
+        raise HTTPException(status_code=400, detail="Document is not a resume")
+
+    # Read resume content
+    file_path = Path(doc["file_path"])
+    if doc["file_type"] == "PDF":
+        content = read_pdf_content(file_path)
+    elif doc["file_type"] == "DOCX":
+        content = read_docx_content(file_path)
+    else:
+        raise HTTPException(status_code=400, detail="Unsupported file type")
+
+    if not content.strip():
+        raise HTTPException(status_code=400, detail="Resume appears to be empty")
+
+    # Define response schema for structured output
+    resume_schema = {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+            "headline": {"type": "string"},
+            "skills": {"type": "array", "items": {"type": "string"}},
+            "experience": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "title": {"type": "string"},
+                        "company": {"type": "string"},
+                        "duration": {"type": "string"},
+                        "description": {"type": "string"}
+                    },
+                    "required": ["title", "company", "duration", "description"]
+                }
+            },
+            "education": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "institution": {"type": "string"},
+                        "degree": {"type": "string"},
+                        "year": {"type": "string"}
+                    },
+                    "required": ["institution", "degree"]
+                }
+            },
+            "confidence_score": {"type": "number"}
+        },
+        "required": ["name", "headline", "skills", "experience", "education", "confidence_score"]
+    }
+
+    prompt = """Extract candidate information from this resume as JSON with the following fields:
+- name: Full name of the candidate
+- headline: Professional headline/title (e.g., "Senior Software Engineer")
+- skills: Array of technical and soft skills
+- experience: Array of work experiences with title, company, duration, description
+- education: Array of education entries with institution, degree, year
+- confidence_score: Number 0-100 indicating how confident you are in the extraction quality based on text clarity and completeness"""
+
+    extracted_data = await extract_with_gemini(content, prompt, resume_schema)
+
+    # Store profile
+    profile_id = uuid.uuid4().hex
+    profile = {
+        "profile_id": profile_id,
+        "type": "resume",
+        "document_id": document_id,
+        "name": extracted_data.get("name", ""),
+        "headline": extracted_data.get("headline", ""),
+        "skills": extracted_data.get("skills", []),
+        "experience": extracted_data.get("experience", []),
+        "education": extracted_data.get("education", []),
+        "confidence_score": extracted_data.get("confidence_score", 0),
+        "created_at": datetime.utcnow().isoformat(),
+        "user_id": MOCK_USER_ID
+    }
+    profiles_db[profile_id] = profile
+
+    return JSONResponse(content=profile)
+
+
+@app.post("/api/profiles/extract-from-jd")
+async def extract_job_profile(data: dict):
+    """
+    Extract job profile from job description using Gemini AI.
+    Request body: {"document_id": str}
+    Returns: {profile_id, company, role, requirements, nice_to_have, responsibilities}
+    """
+    document_id = data.get("document_id")
+
+    if not document_id:
+        raise HTTPException(status_code=400, detail="document_id is required")
+
+    if document_id not in documents_db:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    doc = documents_db[document_id]
+
+    if doc["type"] != "job_description":
+        raise HTTPException(status_code=400, detail="Document is not a job description")
+
+    # Read JD content
+    content = doc.get("content", "")
+    if not content:
+        file_path = Path(doc["file_path"])
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                content = f.read()
+        except Exception as e:
+            logger.error(f"Error reading JD file: {e}")
+            raise HTTPException(status_code=500, detail="Failed to read job description")
+
+    if not content.strip():
+        raise HTTPException(status_code=400, detail="Job description appears to be empty")
+
+    # Define response schema for structured output
+    jd_schema = {
+        "type": "object",
+        "properties": {
+            "company": {"type": "string"},
+            "role": {"type": "string"},
+            "requirements": {"type": "array", "items": {"type": "string"}},
+            "nice_to_have": {"type": "array", "items": {"type": "string"}},
+            "responsibilities": {"type": "array", "items": {"type": "string"}}
+        },
+        "required": ["company", "role", "requirements", "nice_to_have", "responsibilities"]
+    }
+
+    prompt = """Extract job information from this job description as JSON with the following fields:
+- company: Name of the hiring company
+- role: Job title/position
+- requirements: Array of required qualifications/skills
+- nice_to_have: Array of preferred qualifications/skills
+- responsibilities: Array of key job responsibilities"""
+
+    extracted_data = await extract_with_gemini(content, prompt, jd_schema)
+
+    # Store profile
+    profile_id = uuid.uuid4().hex
+    profile = {
+        "profile_id": profile_id,
+        "type": "job_description",
+        "document_id": document_id,
+        "company": extracted_data.get("company", ""),
+        "role": extracted_data.get("role", ""),
+        "requirements": extracted_data.get("requirements", []),
+        "nice_to_have": extracted_data.get("nice_to_have", []),
+        "responsibilities": extracted_data.get("responsibilities", []),
+        "created_at": datetime.utcnow().isoformat(),
+        "user_id": MOCK_USER_ID
+    }
+    profiles_db[profile_id] = profile
+
+    return JSONResponse(content=profile)
+
+
+@app.get("/api/profiles/{profile_id}")
+async def get_profile(profile_id: str):
+    """
+    Retrieve an extracted profile by ID.
+    Returns: Profile data (resume or job_description)
+    """
+    if profile_id not in profiles_db:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    profile = profiles_db[profile_id]
+    return JSONResponse(content=profile)
+
+
+# ============================================================================
+# Interview Context API Endpoints
+# ============================================================================
+
+@app.post("/api/interview-contexts")
+async def create_interview_context(data: dict):
+    """
+    Create interview context binding resume profile + job profile.
+    Request body: {"resume_profile_id": str, "job_profile_id": str}
+    Returns: {context_id, resume_profile, job_profile, created_at}
+    """
+    resume_profile_id = data.get("resume_profile_id")
+    job_profile_id = data.get("job_profile_id")
+
+    if not resume_profile_id or not job_profile_id:
+        raise HTTPException(status_code=400, detail="Both resume_profile_id and job_profile_id are required")
+
+    if resume_profile_id not in profiles_db:
+        raise HTTPException(status_code=404, detail="Resume profile not found")
+
+    if job_profile_id not in profiles_db:
+        raise HTTPException(status_code=404, detail="Job profile not found")
+
+    resume_profile = profiles_db[resume_profile_id]
+    job_profile = profiles_db[job_profile_id]
+
+    if resume_profile["type"] != "resume":
+        raise HTTPException(status_code=400, detail="First profile must be a resume profile")
+
+    if job_profile["type"] != "job_description":
+        raise HTTPException(status_code=400, detail="Second profile must be a job description profile")
+
+    # Create context
+    context_id = uuid.uuid4().hex
+    context = {
+        "context_id": context_id,
+        "resume_profile_id": resume_profile_id,
+        "job_profile_id": job_profile_id,
+        "resume_profile": {
+            "name": resume_profile["name"],
+            "headline": resume_profile["headline"],
+            "skills": resume_profile["skills"],
+            "experience": resume_profile["experience"],
+            "education": resume_profile["education"],
+            "confidence_score": resume_profile["confidence_score"]
+        },
+        "job_profile": {
+            "company": job_profile["company"],
+            "role": job_profile["role"],
+            "requirements": job_profile["requirements"],
+            "nice_to_have": job_profile["nice_to_have"],
+            "responsibilities": job_profile["responsibilities"]
+        },
+        "created_at": datetime.utcnow().isoformat(),
+        "user_id": MOCK_USER_ID
+    }
+    interview_contexts_db[context_id] = context
+
+    return JSONResponse(content=context)
+
+
+@app.get("/api/interview-contexts")
+async def list_interview_contexts():
+    """
+    List all interview contexts for the current user.
+    Returns: [{context_id, resume_profile_summary, job_profile_summary, created_at}]
+    """
+    contexts = [
+        {
+            "context_id": ctx["context_id"],
+            "resume_profile_summary": {
+                "name": ctx["resume_profile"]["name"],
+                "headline": ctx["resume_profile"]["headline"]
+            },
+            "job_profile_summary": {
+                "company": ctx["job_profile"]["company"],
+                "role": ctx["job_profile"]["role"]
+            },
+            "created_at": ctx["created_at"]
+        }
+        for ctx in interview_contexts_db.values()
+        if ctx.get("user_id") == MOCK_USER_ID
+    ]
+    return JSONResponse(content=contexts)
+
+
+@app.get("/api/interview-contexts/{context_id}")
+async def get_interview_context(context_id: str):
+    """
+    Get full interview context details by ID.
+    Returns: {context_id, resume_profile, job_profile, created_at}
+    """
+    if context_id not in interview_contexts_db:
+        raise HTTPException(status_code=404, detail="Context not found")
+
+    context = interview_contexts_db[context_id]
+    return JSONResponse(content=context)
+
+
 if __name__ == "__main__":
     import uvicorn
 
