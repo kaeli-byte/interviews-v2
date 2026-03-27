@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+google-genai
+websockets
+python-dotenv
+python-multipart
+pypdf
+python-docx
+httpx
+beautifulsoup4
