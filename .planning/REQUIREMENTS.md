@@ -9,15 +9,15 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Document Ingestion
 
-- [ ] **DOC-01**: User can upload resume (PDF format)
-- [ ] **DOC-02**: User can upload resume (DOCX format)
-- [ ] **DOC-03**: User can input job description as text
-- [ ] **DOC-04**: User can import job description from URL
-- [ ] **DOC-05**: System extracts candidate profile (name, headline, skills, experience) from resume
-- [ ] **DOC-06**: System extracts job profile (company, role, requirements) from JD
-- [ ] **DOC-07**: User can view extracted profile data
-- [ ] **DOC-08**: Extraction includes quality confidence score
-- [ ] **DOC-09**: User can create interview context (bind resume + job profile)
+- [x] **DOC-01**: User can upload resume (PDF format)
+- [x] **DOC-02**: User can upload resume (DOCX format)
+- [x] **DOC-03**: User can input job description as text
+- [x] **DOC-04**: User can import job description from URL
+- [x] **DOC-05**: System extracts candidate profile (name, headline, skills, experience) from resume
+- [x] **DOC-06**: System extracts job profile (company, role, requirements) from JD
+- [x] **DOC-07**: User can view extracted profile data
+- [x] **DOC-08**: Extraction includes quality confidence score
+- [x] **DOC-09**: User can create interview context (bind resume + job profile)
 
 ### Live Interview Sessions
 
@@ -104,15 +104,15 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| DOC-01 | Phase 1 | Pending |
-| DOC-02 | Phase 1 | Pending |
-| DOC-03 | Phase 1 | Pending |
-| DOC-04 | Phase 1 | Pending |
-| DOC-05 | Phase 1 | Pending |
-| DOC-06 | Phase 1 | Pending |
-| DOC-07 | Phase 1 | Pending |
-| DOC-08 | Phase 1 | Pending |
-| DOC-09 | Phase 1 | Pending |
+| DOC-01 | Phase 1 | Complete |
+| DOC-02 | Phase 1 | Complete |
+| DOC-03 | Phase 1 | Complete |
+| DOC-04 | Phase 1 | Complete |
+| DOC-05 | Phase 1 | Complete |
+| DOC-06 | Phase 1 | Complete |
+| DOC-07 | Phase 1 | Complete |
+| DOC-08 | Phase 1 | Complete |
+| DOC-09 | Phase 1 | Complete |
 | SESS-01 | Phase 1 | Pending |
 | SESS-02 | Phase 1 | Pending |
 | SESS-03 | Phase 1 | Pending |
@@ -140,6 +140,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 **Coverage:**
 - v1 requirements: 39 total
 - Mapped to phases: 39
+- Complete: 9 ✓
 - Unmapped: 0 ✓
 
 ---

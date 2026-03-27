@@ -10,25 +10,31 @@ See: .planning/PROJECT.md (updated 2026-03-27)
 
 ## Current Status
 
-- **Phase:** None (not started)
+- **Phase:** 1 - Core Foundation (in progress)
 - **Mode:** YOLO (auto-approved phases and plans)
 - **Workflow agents:** research=true, plan_check=true, verifier=true
 
 ## Active Work
 
-No active phase. Run `/gsd:plan-phase 1` to start execution.
+Executing Phase 1 plans. Plan 1.1 complete.
 
 ## Phase Summary
 
 | Phase | Goal | Status |
 |-------|------|--------|
-| 1 - Core Foundation | Document ingestion, live sessions, auth | Pending |
+| 1 - Core Foundation | Document ingestion, live sessions, auth | Plan 1.1 complete |
 | 2 - Differentiation Layer | Interview agents, debrief & analysis | Pending |
 | 3 - Polish & Preparation | Progress tracking, architecture prep | Pending |
 
+## Completed Plans
+
+| Plan | Name | Completed | Summary |
+|------|------|-----------|---------|
+| 1.1 | Document Ingestion + Interview Context | 2026-03-27 | Upload PDF/DOCX resumes, text/URL JDs, Gemini AI profile extraction, interview context creation |
+
 ## Next Action
 
-Run `/gsd:plan-phase 1` to create detailed implementation plans for Phase 1.
+Execute Plan 1.2: Live Interview Sessions Foundation (pause/resume/end controls, transcript capture)
 
 ---
-*Last updated: 2026-03-27 after initialization*
+*Last updated: 2026-03-27 after Plan 1.1 completion*

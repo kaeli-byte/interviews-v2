@@ -14,22 +14,22 @@
 
 **Plans:** 3 plans
 
-- [ ] 01-core-foundation-01-PLAN.md — Document ingestion, profile extraction, interview context creation
+- [x] 01-core-foundation-01-PLAN.md — Document ingestion, profile extraction, interview context creation
 - [ ] 01-core-foundation-02-PLAN.md — Live interview sessions with pause/resume/end controls
 - [ ] 01-core-foundation-03-PLAN.md — Authentication and user-scoped document management
 
 #### Plan 1.1: Document Ingestion + Interview Context (01-PLAN.md)
-- DOC-01: User can upload resume (PDF format)
-- DOC-02: User can upload resume (DOCX format)
-- DOC-03: User can input job description as text
-- DOC-04: User can import job description from URL
-- DOC-05: System extracts candidate profile from resume
-- DOC-06: System extracts job profile from JD
-- DOC-07: User can view extracted profile data
-- DOC-08: Extraction includes quality confidence score
-- DOC-09: User can create interview context (resume + job bind)
+- [x] DOC-01: User can upload resume (PDF format)
+- [x] DOC-02: User can upload resume (DOCX format)
+- [x] DOC-03: User can input job description as text
+- [x] DOC-04: User can import job description from URL
+- [x] DOC-05: System extracts candidate profile from resume
+- [x] DOC-06: System extracts job profile from JD
+- [x] DOC-07: User can view extracted profile data
+- [x] DOC-08: Extraction includes quality confidence score
+- [x] DOC-09: User can create interview context (resume + job bind)
 
-**Verification:** User can upload resume and JD, see extracted profiles, create interview context.
+**Verification:** User can upload resume and JD, see extracted profiles, create interview context. **DONE**
 
 #### Plan 1.2: Live Interview Sessions Foundation (02-PLAN.md)
 - SESS-01: User can start new interview session
@@ -130,11 +130,11 @@ Phase 1 ────────────────────────
 
 | Phase | Requirements | Status |
 |-------|--------------|--------|
-| Phase 1 | 19 requirements | Planned |
+| Phase 1 | 9 requirements | 9 complete, 10 pending |
 | Phase 2 | 12 requirements | Pending |
 | Phase 3 | 7 requirements | Pending |
 
-**Total:** 39 requirements mapped ✓
+**Total:** 39 requirements mapped ✓ (9 complete)
 
 ---
 
