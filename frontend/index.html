@@ -93,6 +93,42 @@
                 <p>Create an interview context by binding a resume with a job description</p>
               </div>
             </div>
+
+            <!-- Interview Session Section (shown when interview is active) -->
+            <div class="interview-session-section hidden" id="interview-session-section">
+              <div class="session-header">
+                <h3>Interview Session</h3>
+                <div class="session-status" id="session-status">
+                  <span class="status-indicator"></span>
+                  <span class="status-text">Connecting</span>
+                </div>
+              </div>
+
+              <div class="session-controls">
+                <button id="startInterviewBtn" class="btn btn-primary">Start Interview</button>
+                <button id="pauseInterviewBtn" class="btn btn-secondary hidden">Pause</button>
+                <button id="resumeInterviewBtn" class="btn btn-primary hidden">Resume</button>
+                <button id="endInterviewBtn" class="btn btn-danger hidden">End</button>
+              </div>
+
+              <div class="session-transcript">
+                <div class="transcript-header">
+                  <h4>Transcript</h4>
+                  <span id="transcript-count">0 messages</span>
+                </div>
+                <div class="transcript-log" id="transcript-log"></div>
+              </div>
+
+              <!-- Session End Summary -->
+              <div class="session-end-summary hidden" id="session-end-summary">
+                <h4>Interview Complete</h4>
+                <p id="session-summary-text">You exchanged 0 messages</p>
+                <div class="session-end-actions">
+                  <button id="viewTranscriptBtn" class="btn btn-secondary">View Full Transcript</button>
+                  <button id="closeSessionBtn" class="btn btn-primary">Back to Dashboard</button>
+                </div>
+              </div>
+            </div>
           </div>
 
           <!-- Settings Tab -->
@@ -237,6 +273,7 @@
     <script src="/static/media-handler.js"></script>
     <script src="/static/gemini-client.js"></script>
     <script src="/static/document-upload.js"></script>
+    <script src="/static/interview-session.js"></script>
     <script src="/static/main.js"></script>
   </body>
 </html>

@@ -904,3 +904,214 @@ label {
     max-height: 95vh;
   }
 }
+
+/* ============================================================================
+   Interview Session Styles
+   ============================================================================ */
+
+.interview-session-section {
+  margin-top: 24px;
+  padding: 24px;
+  background: var(--bg-color);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  animation: fadeIn 0.3s ease;
+}
+
+.session-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.session-header h3 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.session-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.session-status .status-indicator {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  animation: pulse 2s infinite;
+}
+
+/* Session status states - using UI-SPEC.md colors */
+.session-status.active {
+  background: #e6f4ea;
+  color: #1e8e3e;
+}
+
+.session-status.active .status-indicator {
+  background: #22c55e;
+}
+
+.session-status.paused {
+  background: #fef7e0;
+  color: #b06800;
+}
+
+.session-status.paused .status-indicator {
+  background: #eab308;
+}
+
+.session-status.ended {
+  background: #f1f3f4;
+  color: #5f6368;
+}
+
+.session-status.ended .status-indicator {
+  background: #6b7280;
+  animation: none;
+}
+
+.session-status.connecting {
+  background: #e8f0fe;
+  color: #1a73e8;
+}
+
+.session-status.connecting .status-indicator {
+  background: #1a73e8;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.session-controls {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.btn-primary {
+  background-color: #0ea5e9;
+}
+
+.btn-primary:hover {
+  background-color: #0284c7;
+}
+
+.btn-danger {
+  background-color: #ef4444;
+}
+
+.btn-danger:hover {
+  background-color: #dc2626;
+}
+
+.session-transcript {
+  background: var(--surface-color);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  border: 1px solid var(--border-color);
+}
+
+.transcript-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.transcript-header h4 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+#transcript-count {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.transcript-log {
+  max-height: 300px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.transcript-entry {
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.transcript-entry.user {
+  background: #e8f0fe;
+  align-self: flex-end;
+  max-width: 80%;
+}
+
+.transcript-entry.gemini {
+  background: #f1f3f4;
+  align-self: flex-start;
+  max-width: 80%;
+}
+
+.transcript-entry .speaker-label {
+  font-weight: 600;
+  font-size: 12px;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+}
+
+.transcript-entry .timestamp {
+  font-size: 10px;
+  color: var(--text-secondary);
+  margin-left: 8px;
+  font-weight: 400;
+}
+
+.transcript-entry .text {
+  margin: 0;
+}
+
+/* Session End Summary */
+.session-end-summary {
+  text-align: center;
+  padding: 32px 24px;
+  background: var(--surface-color);
+  border-radius: var(--radius-md);
+  margin-top: 16px;
+}
+
+.session-end-summary h4 {
+  margin: 0 0 8px 0;
+  font-size: 1.25rem;
+}
+
+#session-summary-text {
+  color: var(--text-secondary);
+  margin-bottom: 20px;
+}
+
+.session-end-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
