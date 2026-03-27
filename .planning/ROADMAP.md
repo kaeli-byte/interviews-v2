@@ -15,7 +15,7 @@
 **Plans:** 3 plans
 
 - [x] 01-core-foundation-01-PLAN.md — Document ingestion, profile extraction, interview context creation
-- [ ] 01-core-foundation-02-PLAN.md — Live interview sessions with pause/resume/end controls
+- [x] 01-core-foundation-02-PLAN.md — Live interview sessions with pause/resume/end controls
 - [ ] 01-core-foundation-03-PLAN.md — Authentication and user-scoped document management
 
 #### Plan 1.1: Document Ingestion + Interview Context (01-PLAN.md)
@@ -32,14 +32,14 @@
 **Verification:** User can upload resume and JD, see extracted profiles, create interview context. **DONE**
 
 #### Plan 1.2: Live Interview Sessions Foundation (02-PLAN.md)
-- SESS-01: User can start new interview session
-- SESS-02: Session supports real-time voice via Gemini Live
-- SESS-03: Session captures transcript incrementally
-- SESS-04: User can pause interview session
-- SESS-05: User can resume paused interview
-- SESS-06: User can end interview session
+- [x] SESS-01: User can start new interview session
+- [x] SESS-02: Session supports real-time voice via Gemini Live
+- [x] SESS-03: Session captures transcript incrementally
+- [x] SESS-04: User can pause interview session
+- [x] SESS-05: User can resume paused interview
+- [x] SESS-06: User can end interview session
 
-**Verification:** User can conduct complete voice interview with pause/resume.
+**Verification:** User can conduct complete voice interview with pause/resume. **DONE**
 
 #### Plan 1.3: Authentication + User Management (03-PLAN.md)
 - USER-01: User can sign up with email/password
@@ -130,14 +130,15 @@ Phase 1 ────────────────────────
 
 | Phase | Requirements | Status |
 |-------|--------------|--------|
-| Phase 1 | 9 requirements | 9 complete, 10 pending |
+| Phase 1 | 15 requirements | 15 complete, 4 pending |
 | Phase 2 | 12 requirements | Pending |
 | Phase 3 | 7 requirements | Pending |
 
-**Total:** 39 requirements mapped ✓ (9 complete)
+**Total:** 39 requirements mapped ✓ (15 complete)
 
 ---
 
 *Roadmap created: 2026-03-27*
 *Granularity: coarse | Parallel execution enabled*
 *Phase 1 plans created: 2026-03-27*
+*Plan 1.2 completed: 2026-03-27*
