@@ -42,6 +42,21 @@ UPLOADS_DIR.mkdir(exist_ok=True)
 documents_db: Dict[str, Dict[str, Any]] = {}
 profiles_db: Dict[str, Dict[str, Any]] = {}
 interview_contexts_db: Dict[str, Dict[str, Any]] = {}
+sessions_db: Dict[str, Dict[str, Any]] = {}
+
+# Session state machine constants
+SESSION_STATE_PENDING = "pending"
+SESSION_STATE_ACTIVE = "active"
+SESSION_STATE_PAUSED = "paused"
+SESSION_STATE_ENDED = "ended"
+
+# Valid state transitions
+VALID_TRANSITIONS = {
+    SESSION_STATE_PENDING: [SESSION_STATE_ACTIVE],
+    SESSION_STATE_ACTIVE: [SESSION_STATE_PAUSED, SESSION_STATE_ENDED],
+    SESSION_STATE_PAUSED: [SESSION_STATE_ACTIVE, SESSION_STATE_ENDED],
+    SESSION_STATE_ENDED: []
+}
 
 # Initialize FastAPI
 app = FastAPI()
@@ -670,6 +685,143 @@ async def get_interview_context(context_id: str):
 
     context = interview_contexts_db[context_id]
     return JSONResponse(content=context)
+
+
+# ============================================================================
+# Interview Session Management API Endpoints
+# ============================================================================
+
+def is_valid_transition(current_state: str, new_state: str) -> bool:
+    """Check if state transition is valid."""
+    return new_state in VALID_TRANSITIONS.get(current_state, [])
+
+
+@app.post("/api/sessions")
+async def create_session(data: dict):
+    """
+    Create a new interview session.
+    Request body: {"context_id": str, "interview_type"?: "hr" | "hiring"}
+    Returns: {session_id, context, state}
+    """
+    context_id = data.get("context_id")
+    interview_type = data.get("interview_type", "hiring")
+
+    if not context_id:
+        raise HTTPException(status_code=400, detail="context_id is required")
+
+    if context_id not in interview_contexts_db:
+        raise HTTPException(status_code=404, detail="Interview context not found")
+
+    context = interview_contexts_db[context_id]
+
+    # Create session
+    session_id = uuid.uuid4().hex
+    now = datetime.utcnow().isoformat()
+
+    session = {
+        "session_id": session_id,
+        "context_id": context_id,
+        "interview_type": interview_type,
+        "state": SESSION_STATE_ACTIVE,
+        "transcript": [],
+        "started_at": now,
+        "updated_at": now,
+        "user_id": MOCK_USER_ID
+    }
+    sessions_db[session_id] = session
+
+    return JSONResponse(content={
+        "session_id": session_id,
+        "context": {
+            "context_id": context_id,
+            "resume_profile": context["resume_profile"],
+            "job_profile": context["job_profile"]
+        },
+        "state": SESSION_STATE_ACTIVE
+    })
+
+
+@app.get("/api/sessions/{session_id}")
+async def get_session(session_id: str):
+    """
+    Retrieve session details by ID.
+    Returns: {session_id, context_id, state, transcript[], started_at, updated_at}
+    """
+    if session_id not in sessions_db:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    session = sessions_db[session_id]
+    return JSONResponse(content={
+        "session_id": session["session_id"],
+        "context_id": session["context_id"],
+        "state": session["state"],
+        "transcript": session["transcript"],
+        "started_at": session["started_at"],
+        "updated_at": session["updated_at"]
+    })
+
+
+@app.patch("/api/sessions/{session_id}")
+async def update_session(session_id: str, data: dict):
+    """
+    Update session state.
+    Request body: {"action": "pause" | "resume" | "end"}
+    Returns: {session_id, state, previous_state}
+    """
+    if session_id not in sessions_db:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    session = sessions_db[session_id]
+    current_state = session["state"]
+    action = data.get("action")
+
+    if not action:
+        raise HTTPException(status_code=400, detail="action is required")
+
+    # Map action to target state
+    action_to_state = {
+        "pause": SESSION_STATE_PAUSED,
+        "resume": SESSION_STATE_ACTIVE,
+        "end": SESSION_STATE_ENDED
+    }
+
+    if action not in action_to_state:
+        raise HTTPException(status_code=400, detail=f"Invalid action: {action}")
+
+    target_state = action_to_state[action]
+
+    # Validate state transition
+    if not is_valid_transition(current_state, target_state):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid state transition from {current_state} to {target_state}"
+        )
+
+    previous_state = current_state
+    session["state"] = target_state
+    session["updated_at"] = datetime.utcnow().isoformat()
+
+    return JSONResponse(content={
+        "session_id": session_id,
+        "state": target_state,
+        "previous_state": previous_state
+    })
+
+
+@app.delete("/api/sessions/{session_id}")
+async def delete_session(session_id: str):
+    """
+    End and cleanup session.
+    Returns: {success: true}
+    """
+    if session_id not in sessions_db:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    session = sessions_db[session_id]
+    session["state"] = SESSION_STATE_ENDED
+    session["updated_at"] = datetime.utcnow().isoformat()
+
+    return JSONResponse(content={"success": True})
 
 
 if __name__ == "__main__":
