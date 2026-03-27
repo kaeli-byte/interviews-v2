@@ -79,26 +79,52 @@ async def root():
 
 
 @app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    """WebSocket endpoint for Gemini Live."""
+async def websocket_endpoint(websocket: WebSocket, session_id: str = None):
+    """WebSocket endpoint for Gemini Live with session management."""
+
+    # Validate session if session_id provided
+    if session_id:
+        if session_id not in sessions_db:
+            logger.warning(f"WebSocket connection rejected: session {session_id} not found")
+            await websocket.close(code=4004, reason="Session not found")
+            return
+
+        session = sessions_db[session_id]
+        if session["state"] != SESSION_STATE_ACTIVE:
+            logger.warning(f"WebSocket connection rejected: session {session_id} not active (state={session['state']})")
+            await websocket.close(code=4005, reason="Session not active")
+            return
+
+        logger.info(f"WebSocket connection accepted for session {session_id}")
+    else:
+        logger.info("WebSocket connection accepted (no session_id - demo mode)")
+
     await websocket.accept()
 
-    logger.info("WebSocket connection accepted")
+    logger.info("WebSocket connection established")
 
     audio_input_queue = asyncio.Queue()
     video_input_queue = asyncio.Queue()
     text_input_queue = asyncio.Queue()
 
+    # Transcript persistence callback
+    def save_transcript_to_session(transcript_entries):
+        if session_id and session_id in sessions_db:
+            sessions_db[session_id]["transcript"].extend(transcript_entries)
+            logger.debug(f"Saved {len(transcript_entries)} transcript entries to session {session_id}")
+
     async def audio_output_callback(data):
         await websocket.send_bytes(data)
 
     async def audio_interrupt_callback():
-        # The event queue handles the JSON message, but we might want to do something else here
         pass
 
     gemini_client = GeminiLive(
         api_key=GEMINI_API_KEY, model=MODEL, input_sample_rate=16000
     )
+
+    # Set transcript callback for session persistence
+    gemini_client.set_transcript_callback(save_transcript_to_session)
 
     async def receive_from_client():
         try:
@@ -111,6 +137,29 @@ async def websocket_endpoint(websocket: WebSocket):
                     text = message["text"]
                     try:
                         payload = json.loads(text)
+                        # Handle session control messages
+                        if isinstance(payload, dict) and payload.get("type") == "session_control":
+                            action = payload.get("action")
+                            if session_id and session_id in sessions_db:
+                                if action == "pause":
+                                    sessions_db[session_id]["state"] = SESSION_STATE_PAUSED
+                                    gemini_client.pause_session()
+                                    await websocket.send_json({"type": "session_paused"})
+                                    logger.info(f"Session {session_id} paused via WebSocket")
+                                elif action == "resume":
+                                    sessions_db[session_id]["state"] = SESSION_STATE_ACTIVE
+                                    gemini_client.resume_session()
+                                    await websocket.send_json({"type": "session_resumed"})
+                                    logger.info(f"Session {session_id} resumed via WebSocket")
+                                elif action == "end":
+                                    result = gemini_client.end_session()
+                                    sessions_db[session_id]["state"] = SESSION_STATE_ENDED
+                                    sessions_db[session_id]["transcript"] = result.get("final_transcript", [])
+                                    await websocket.send_json({"type": "session_ended", "transcript": result.get("final_transcript", [])})
+                                    logger.info(f"Session {session_id} ended via WebSocket")
+                                    return  # Exit the receive loop
+                            continue
+
                         if isinstance(payload, dict) and payload.get("type") == "image":
                             logger.info(f"Received image chunk from client: {len(payload['data'])} base64 chars")
                             image_data = base64.b64decode(payload["data"])
@@ -134,6 +183,7 @@ async def websocket_endpoint(websocket: WebSocket):
             text_input_queue=text_input_queue,
             audio_output_callback=audio_output_callback,
             audio_interrupt_callback=audio_interrupt_callback,
+            session_id=session_id,
         ):
             if event:
                 # Forward events (transcriptions, etc) to client
