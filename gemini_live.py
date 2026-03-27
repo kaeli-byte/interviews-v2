@@ -2,6 +2,8 @@ import asyncio
 import inspect
 import logging
 import traceback
+import time
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 from google import genai
@@ -29,7 +31,84 @@ class GeminiLive:
         self.tools = tools or []
         self.tool_mapping = tool_mapping or {}
 
-    async def start_session(self, audio_input_queue, video_input_queue, text_input_queue, audio_output_callback, audio_interrupt_callback=None):
+        # Session state management
+        self.session_state = "active"  # "active" | "paused" | "ended"
+        self.transcript_buffer = []  # Accumulates transcripts between checkpoints
+        self.last_checkpoint_time = None
+        self.checkpoint_interval = 15  # seconds
+        self.session_id = None
+        self.transcript_callback = None  # Callback to save transcript to session store
+        self._pause_event = asyncio.Event()
+        self._pause_event.set()  # Initially not paused
+
+    def set_transcript_callback(self, callback):
+        """Set callback for saving transcripts to session store."""
+        self.transcript_callback = callback
+
+    def pause_session(self):
+        """
+        Pause the session.
+        - Set session_state = "paused"
+        - Signal send_audio to stop sending (but keep buffering)
+        - Flush transcript buffer
+        Returns: {state: "paused", transcript_snapshot: [...]}
+        """
+        self.session_state = "paused"
+        self._pause_event.clear()  # Block audio sending
+        transcript_snapshot = self.transcript_buffer.copy()
+        self._flush_transcript_buffer()
+        return {"state": "paused", "transcript_snapshot": transcript_snapshot}
+
+    def resume_session(self):
+        """
+        Resume the session.
+        - Set session_state = "active"
+        - Allow audio sending to continue
+        Returns: {state: "active"}
+        """
+        self.session_state = "active"
+        self._pause_event.set()  # Unblock audio sending
+        return {"state": "active"}
+
+    def end_session(self):
+        """
+        End the session.
+        - Set session_state = "ended"
+        - Final transcript flush
+        Returns: {state: "ended", final_transcript: [...]}
+        """
+        self.session_state = "ended"
+        self._pause_event.set()  # Unblock for final flush
+        self._flush_transcript_buffer()
+        return {"state": "ended", "final_transcript": self.transcript_buffer.copy()}
+
+    def _flush_transcript_buffer(self):
+        """Flush accumulated transcript buffer to session store."""
+        if self.transcript_buffer and self.transcript_callback:
+            self.transcript_callback(self.transcript_buffer.copy())
+            self.transcript_buffer = []
+
+    def _add_to_transcript_buffer(self, speaker, text):
+        """Add transcript entry to buffer."""
+        entry = {
+            "speaker": speaker,
+            "text": text,
+            "timestamp": datetime.utcnow().isoformat() + "Z"
+        }
+        self.transcript_buffer.append(entry)
+
+        # Check if checkpoint is due
+        self._check_checkpoint()
+
+    def _check_checkpoint(self):
+        """Check if checkpoint interval has elapsed and flush if needed."""
+        import time
+        now = time.time()
+        if self.last_checkpoint_time is None or (now - self.last_checkpoint_time) >= self.checkpoint_interval:
+            self._flush_transcript_buffer()
+            self.last_checkpoint_time = now
+
+    async def start_session(self, audio_input_queue, video_input_queue, text_input_queue, audio_output_callback, audio_interrupt_callback=None, session_id=None):
         config = types.LiveConnectConfig(
             response_modalities=[types.Modality.AUDIO],
             speech_config=types.SpeechConfig(
@@ -50,6 +129,11 @@ class GeminiLive:
         
         logger.info(f"Connecting to Gemini Live with model={self.model}")
         try:
+          # Initialize session state
+          self.session_id = session_id
+          self.last_checkpoint_time = time.time()
+          self.session_state = "active"
+
           async with self.client.aio.live.connect(model=self.model, config=config) as session:
             logger.info("Gemini Live session opened successfully")
             
@@ -57,9 +141,17 @@ class GeminiLive:
                 try:
                     while True:
                         chunk = await audio_input_queue.get()
-                        await session.send_realtime_input(
-                            audio=types.Blob(data=chunk, mime_type=f"audio/pcm;rate={self.input_sample_rate}")
-                        )
+                        # Check if session is paused - wait until resumed
+                        while self.session_state == "paused":
+                            await self._pause_event.wait()
+                            # Re-check state after unblocking
+                            if self.session_state == "ended":
+                                return
+                        # Only send if session is active
+                        if self.session_state == "active":
+                            await session.send_realtime_input(
+                                audio=types.Blob(data=chunk, mime_type=f"audio/pcm;rate={self.input_sample_rate}")
+                            )
                 except asyncio.CancelledError:
                     logger.debug("send_audio task cancelled")
                 except Exception as e:
@@ -116,9 +208,11 @@ class GeminiLive:
                                                 audio_output_callback(part.inline_data.data)
                                 
                                 if server_content.input_transcription and server_content.input_transcription.text:
+                                    self._add_to_transcript_buffer("user", server_content.input_transcription.text)
                                     await event_queue.put({"type": "user", "text": server_content.input_transcription.text})
-                                
+
                                 if server_content.output_transcription and server_content.output_transcription.text:
+                                    self._add_to_transcript_buffer("gemini", server_content.output_transcription.text)
                                     await event_queue.put({"type": "gemini", "text": server_content.output_transcription.text})
                                 
                                 if server_content.turn_complete:
