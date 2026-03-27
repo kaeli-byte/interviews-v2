@@ -16,7 +16,7 @@
 
 - [x] 01-core-foundation-01-PLAN.md — Document ingestion, profile extraction, interview context creation
 - [x] 01-core-foundation-02-PLAN.md — Live interview sessions with pause/resume/end controls
-- [ ] 01-core-foundation-03-PLAN.md — Authentication and user-scoped document management
+- [x] 01-core-foundation-03-PLAN.md — Authentication and user-scoped document management
 
 #### Plan 1.1: Document Ingestion + Interview Context (01-PLAN.md)
 - [x] DOC-01: User can upload resume (PDF format)
@@ -42,12 +42,12 @@
 **Verification:** User can conduct complete voice interview with pause/resume. **DONE**
 
 #### Plan 1.3: Authentication + User Management (03-PLAN.md)
-- USER-01: User can sign up with email/password
-- USER-02: User session persists across browser refresh
-- USER-03: User can view their documents
-- USER-04: User can delete their documents
+- [x] USER-01: User can sign up with email/password
+- [x] USER-02: User session persists across browser refresh
+- [x] USER-03: User can view their documents
+- [x] USER-04: User can delete their documents
 
-**Verification:** User can sign up, log in, manage their documents.
+**Verification:** User can sign up, log in, manage their documents. **DONE**
 
 ---
 
@@ -130,11 +130,11 @@ Phase 1 ────────────────────────
 
 | Phase | Requirements | Status |
 |-------|--------------|--------|
-| Phase 1 | 15 requirements | 15 complete, 4 pending |
+| Phase 1 | 19 requirements | 19 complete |
 | Phase 2 | 12 requirements | Pending |
 | Phase 3 | 7 requirements | Pending |
 
-**Total:** 39 requirements mapped ✓ (15 complete)
+**Total:** 39 requirements mapped ✓ (19 complete)
 
 ---
 
@@ -142,3 +142,5 @@ Phase 1 ────────────────────────
 *Granularity: coarse | Parallel execution enabled*
 *Phase 1 plans created: 2026-03-27*
 *Plan 1.2 completed: 2026-03-27*
+*Plan 1.3 completed: 2026-03-27*
+*Phase 1 complete: 2026-03-27*
