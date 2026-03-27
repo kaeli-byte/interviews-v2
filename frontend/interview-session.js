@@ -14,6 +14,15 @@ class InterviewSession {
     this.onSessionEnd = null;
   }
 
+  // Get auth token for API requests
+  getAuthHeaders() {
+    const token = localStorage.getItem('auth_token');
+    if (token) {
+      return { 'Authorization': `Bearer ${token}` };
+    }
+    return {};
+  }
+
   /**
    * Start a new interview session
    * @param {string} contextId - The interview context ID
@@ -23,7 +32,10 @@ class InterviewSession {
     try {
       const response = await fetch('/api/sessions', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...this.getAuthHeaders()
+        },
         body: JSON.stringify({ context_id: contextId })
       });
 

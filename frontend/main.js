@@ -1,12 +1,161 @@
 // --- Main Application Logic ---
 
+// ============================================================================
+// Authentication Management
+// ============================================================================
+
+class Auth {
+  constructor() {
+    this.token = localStorage.getItem('auth_token');
+    this.user = JSON.parse(localStorage.getItem('auth_user') || 'null');
+    this.isAuthenticated = !!this.token && !!this.user;
+  }
+
+  getToken() {
+    return this.token;
+  }
+
+  isAuthenticated() {
+    return !!this.token && !!this.user;
+  }
+
+  async signup(email, password) {
+    const response = await fetch('/api/auth/signup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Signup failed');
+    }
+
+    const data = await response.json();
+    this.setAuth(data.token, data.user);
+    return data;
+  }
+
+  async login(email, password) {
+    const response = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Login failed');
+    }
+
+    const data = await response.json();
+    this.setAuth(data.token, data.user);
+    return data;
+  }
+
+  async logout() {
+    if (this.token) {
+      try {
+        await fetch('/api/auth/logout', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${this.token}` }
+        });
+      } catch (e) {
+        console.error('Logout API call failed:', e);
+      }
+    }
+    this.clearAuth();
+  }
+
+  async checkAuth() {
+    if (!this.token) {
+      return false;
+    }
+
+    try {
+      const response = await fetch('/api/auth/me', {
+        headers: { 'Authorization': `Bearer ${this.token}` }
+      });
+
+      if (!response.ok) {
+        this.clearAuth();
+        return false;
+      }
+
+      const data = await response.json();
+      this.user = data.user;
+      localStorage.setItem('auth_user', JSON.stringify(this.user));
+      return true;
+    } catch (e) {
+      this.clearAuth();
+      return false;
+    }
+  }
+
+  setAuth(token, user) {
+    this.token = token;
+    this.user = user;
+    localStorage.setItem('auth_token', token);
+    localStorage.setItem('auth_user', JSON.stringify(user));
+    this.isAuthenticated = true;
+  }
+
+  clearAuth() {
+    this.token = null;
+    this.user = null;
+    this.isAuthenticated = false;
+    localStorage.removeItem('auth_token');
+    localStorage.removeItem('auth_user');
+  }
+
+  // Helper for authenticated fetch requests
+  async fetch(url, options = {}) {
+    const headers = {
+      ...(options.headers || {}),
+      'Authorization': `Bearer ${this.token}`
+    };
+
+    const response = await fetch(url, { ...options, headers });
+
+    if (response.status === 401) {
+      this.clearAuth();
+      updateAuthUI(false);
+      throw new Error('Session expired. Please sign in again.');
+    }
+
+    return response;
+  }
+}
+
+// Initialize auth instance
+const auth = new Auth();
+
+// ============================================================================
+
 // DOM Elements
 const statusDiv = document.getElementById("status");
 const authSection = document.getElementById("auth-section");
+const userMenu = document.getElementById("user-menu");
+const userEmail = document.getElementById("user-email");
+const logoutBtn = document.getElementById("logoutBtn");
+const welcomeMessage = document.getElementById("welcome-message");
 const appSection = document.getElementById("app-section");
 const sessionEndSection = document.getElementById("session-end-section");
 const dashboardSection = document.getElementById("dashboard-section");
 const restartBtn = document.getElementById("restartBtn");
+
+// Auth form elements
+const loginForm = document.getElementById("login-form");
+const signupForm = document.getElementById("signup-form");
+const loginEmail = document.getElementById("login-email");
+const loginPassword = document.getElementById("login-password");
+const signupEmail = document.getElementById("signup-email");
+const signupPassword = document.getElementById("signup-password");
+const loginError = document.getElementById("login-error");
+const signupError = document.getElementById("signup-error");
+const authTabBtns = document.querySelectorAll(".auth-tab-btn");
+
+// Existing DOM elements
 const micBtn = document.getElementById("micBtn");
 const cameraBtn = document.getElementById("cameraBtn");
 const screenBtn = document.getElementById("screenBtn");
@@ -55,12 +204,115 @@ let currentContextId = null;
 // Interview session instance
 let interviewSession = null;
 
+// ============================================================================
+// Authentication UI Functions
+// ============================================================================
+
+function updateAuthUI(isAuthenticated) {
+  if (isAuthenticated) {
+    // Show dashboard, hide auth section
+    authSection.classList.add("hidden");
+    dashboardSection.classList.remove("hidden");
+    userMenu.style.display = "flex";
+
+    // Update welcome message
+    if (auth.user && auth.user.email) {
+      welcomeMessage.textContent = `Welcome, ${auth.user.email}`;
+      userEmail.textContent = auth.user.email;
+    }
+
+    // Initialize document uploader
+    if (typeof documentUploader !== 'undefined') {
+      documentUploader.init();
+      documentUploader.fetchContexts();
+    }
+  } else {
+    // Show auth section, hide dashboard
+    authSection.classList.remove("hidden");
+    dashboardSection.classList.add("hidden");
+    userMenu.style.display = "none";
+    appSection.classList.add("hidden");
+  }
+}
+
+function showAuthError(formType, message) {
+  const errorEl = formType === 'login' ? loginError : signupError;
+  errorEl.textContent = message;
+  errorEl.classList.remove("hidden");
+
+  // Clear error after 5 seconds
+  setTimeout(() => {
+    errorEl.classList.add("hidden");
+  }, 5000);
+}
+
+function switchAuthTab(tab) {
+  authTabBtns.forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.authTab === tab);
+  });
+
+  loginForm.classList.toggle("hidden", tab !== "login");
+  signupForm.classList.toggle("hidden", tab !== "signup");
+
+  // Clear errors
+  loginError.classList.add("hidden");
+  signupError.classList.add("hidden");
+}
+
+// Auth tab switching
+authTabBtns.forEach(btn => {
+  btn.addEventListener("click", () => {
+    switchAuthTab(btn.dataset.authTab);
+  });
+});
+
+// Login form handler
+loginForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const email = loginEmail.value.trim();
+  const password = loginPassword.value;
+
+  try {
+    await auth.login(email, password);
+    updateAuthUI(true);
+    loginForm.reset();
+  } catch (error) {
+    showAuthError("login", error.message);
+  }
+});
+
+// Signup form handler
+signupForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const email = signupEmail.value.trim();
+  const password = signupPassword.value;
+
+  try {
+    await auth.signup(email, password);
+    updateAuthUI(true);
+    signupForm.reset();
+  } catch (error) {
+    showAuthError("signup", error.message);
+  }
+});
+
+// Logout button handler
+if (logoutBtn) {
+  logoutBtn.addEventListener("click", async () => {
+    await auth.logout();
+    updateAuthUI(false);
+  });
+}
+
+// ============================================================================
+// Media and Gemini Client Setup
+// ============================================================================
+
 const mediaHandler = new MediaHandler();
 const geminiClient = new GeminiClient({
   onOpen: () => {
     statusDiv.textContent = "Connected";
     statusDiv.className = "status connected";
-    authSection.classList.add("hidden");
     dashboardSection.classList.add("hidden");
     appSection.classList.remove("hidden");
 
@@ -705,7 +957,8 @@ window.setInterviewContext = (contextId) => {
 // Initialize on Load
 // ============================================================================
 
-// Show dashboard by default (for MVP without auth)
-document.addEventListener("DOMContentLoaded", () => {
-  showDashboard();
+// Check authentication status on page load
+document.addEventListener("DOMContentLoaded", async () => {
+  const isAuthed = await auth.checkAuth();
+  updateAuthUI(isAuthed);
 });

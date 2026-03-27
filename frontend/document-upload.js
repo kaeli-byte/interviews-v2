@@ -9,6 +9,15 @@ class DocumentUpload {
     this.currentTab = 'file';
   }
 
+  // Get auth token for API requests
+  getAuthHeaders() {
+    const token = localStorage.getItem('auth_token');
+    if (token) {
+      return { 'Authorization': `Bearer ${token}` };
+    }
+    return {};
+  }
+
   // Initialize upload modal
   init() {
     this.setupModalTabs();
@@ -116,6 +125,7 @@ class DocumentUpload {
 
       const response = await fetch('/api/documents/resume', {
         method: 'POST',
+        headers: this.getAuthHeaders(),
         body: formData
       });
 
@@ -149,7 +159,8 @@ class DocumentUpload {
       const response = await fetch('/api/documents/job-description', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          ...this.getAuthHeaders()
         },
         body: JSON.stringify({ text })
       });
@@ -184,7 +195,8 @@ class DocumentUpload {
       const response = await fetch('/api/documents/job-description', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          ...this.getAuthHeaders()
         },
         body: JSON.stringify({ url })
       });
@@ -214,7 +226,9 @@ class DocumentUpload {
 
   async fetchDocuments() {
     try {
-      const response = await fetch('/api/documents');
+      const response = await fetch('/api/documents', {
+        headers: this.getAuthHeaders()
+      });
       if (!response.ok) {
         throw new Error('Failed to fetch documents');
       }
@@ -265,7 +279,8 @@ class DocumentUpload {
 
     try {
       const response = await fetch(`/api/documents/${id}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: this.getAuthHeaders()
       });
 
       if (!response.ok) {
@@ -286,7 +301,8 @@ class DocumentUpload {
       const response = await fetch('/api/profiles/extract-from-resume', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          ...this.getAuthHeaders()
         },
         body: JSON.stringify({ document_id: documentId })
       });
@@ -314,7 +330,8 @@ class DocumentUpload {
       const response = await fetch('/api/profiles/extract-from-jd', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          ...this.getAuthHeaders()
         },
         body: JSON.stringify({ document_id: documentId })
       });
@@ -431,7 +448,9 @@ class DocumentUpload {
 
   async fetchContexts() {
     try {
-      const response = await fetch('/api/interview-contexts');
+      const response = await fetch('/api/interview-contexts', {
+        headers: this.getAuthHeaders()
+      });
       if (!response.ok) {
         throw new Error('Failed to fetch contexts');
       }
@@ -483,7 +502,8 @@ class DocumentUpload {
       const response = await fetch('/api/interview-contexts', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          ...this.getAuthHeaders()
         },
         body: JSON.stringify({
           resume_profile_id: resumeProfileId,
