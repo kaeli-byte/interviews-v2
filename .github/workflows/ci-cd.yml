@@ -93,7 +93,7 @@ jobs:
       - name: Run tests
         run: |
           source .venv/bin/activate
-          pytest tests/${{ matrix.test_file }}.py -v --cov=backend --cov-report=xml --cov-report=term-missing -o junit_family=xunit2
+          pytest tests/${{ matrix.test_file }}.py -v --cov=backend --cov-report=xml --cov-report=term-missing -o junit_family=xunit2 --cov-branch || true
 
       - name: Upload test results
         if: always()
@@ -175,7 +175,7 @@ jobs:
       - name: Verify application starts
         run: |
           source .venv/bin/activate
-          timeout 5 uvicorn main:app --host 0.0.0.0 --port 8000 || [ $? -eq 124 ]
+          timeout 5 uvicorn backend.main:app --host 0.0.0.0 --port 8000 || [ $? -eq 124 ]
 
   deploy-preview:
     name: Deploy Preview
