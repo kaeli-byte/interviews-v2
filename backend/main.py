@@ -42,9 +42,6 @@ async def root():
     """Root endpoint - serves frontend or API info."""
     if settings.frontend_dist_exists:
         frontend_path = settings.get_frontend_build_path()
-        # If path is '.', serve index.html from current directory
-        if frontend_path == ".":
-            return FileResponse("index.html")
         return FileResponse(f"{frontend_path}/index.html")
     # On Vercel without frontend build, serve API info
     return JSONResponse({

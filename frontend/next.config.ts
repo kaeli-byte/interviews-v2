@@ -1,13 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Static export for Vercel + FastAPI deployment
-  output: 'export',
-
-  // Disable image optimization (not needed for static export)
-  images: {
-    unoptimized: true,
-  },
+  // Keep Next.js as full framework (not static export)
+  // API routes will be handled by FastAPI serverless functions
 };
 
 export default nextConfig;

@@ -1,7 +1,6 @@
 """Configuration management."""
 import os
 from pathlib import Path
-from typing import Optional
 
 from dotenv import load_dotenv
 
@@ -31,12 +30,8 @@ class Settings:
     # CORS
     CORS_ORIGINS: list = ["*"]
 
-    # Frontend (for redirects)
-    FRONTEND_DEV_URL: str = "http://localhost:3000"
+    # Frontend paths - Vercel builds Next.js output here
     FRONTEND_BUILD_PATH: str = "frontend/.next/server/app"
-    FRONTEND_BUILD_PATH_ALT: str = ".next/server/app"  # Vercel builds to root on deployment
-    # Static export - Vercel deployment has files at project root after build
-    FRONTEND_STATIC_EXPORT_ALT: str = "index.html"  # Check for index.html at root (Vercel)
 
     # Demo mode
     MOCK_USER_ID: str = "demo_user"
@@ -56,24 +51,13 @@ class Settings:
     @property
     def frontend_dist_exists(self) -> bool:
         """Check if Next.js build exists."""
-        # Check multiple possible paths (local vs Vercel deployment)
-        return (
-            Path(self.FRONTEND_BUILD_PATH).exists() or
-            Path(self.FRONTEND_BUILD_PATH_ALT).exists()
-        )
+        return Path(self.FRONTEND_BUILD_PATH).exists()
 
     def get_frontend_build_path(self) -> str:
-        """Get the actual frontend build path."""
-        # Check for static export at project root (Vercel deployment)
-        if Path("index.html").exists():
-            return "."
-        # Check for Next.js build at root
-        if Path(self.FRONTEND_BUILD_PATH_ALT).exists():
-            return self.FRONTEND_BUILD_PATH_ALT
-        # Check local Next.js build
+        """Get the frontend build path."""
         if Path(self.FRONTEND_BUILD_PATH).exists():
             return self.FRONTEND_BUILD_PATH
-        return "."  # fallback - try current directory
+        return self.FRONTEND_BUILD_PATH
 
 
 settings = Settings()
