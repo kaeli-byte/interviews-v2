@@ -172,11 +172,17 @@ jobs:
           source .venv/bin/activate
           uv pip install -r requirements.txt
 
+      - name: Create dummy .env for build test
+        run: |
+          echo "GEMINI_API_KEY=test-key" > .env
+          echo "JWT_SECRET_KEY=test-secret" >> .env
+          echo "SUPABASE_DB_URL=postgresql://test:test@localhost:5432/test" >> .env
+          echo "DIRECT_URL=postgresql://test:test@localhost:5432/test" >> .env
+
       - name: Verify application starts
         run: |
           source .venv/bin/activate
-          timeout 5 uvicorn backend.main:app --host 0.0.0.0 --port 8000 || [ $? -eq 124 ]
-        continue-on-error: true
+          timeout 10 uvicorn backend.main:app --host 0.0.0.0 --port 8000 || [ $? -eq 124 ]
 
   deploy-preview:
     name: Deploy Preview
