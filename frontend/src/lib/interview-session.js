@@ -61,7 +61,13 @@ class InterviewSession {
    * @param {Object} callbacks - WebSocket callbacks
    */
   connectWebSocket(callbacks) {
-    const wsUrl = `ws://localhost:8000/ws?session_id=${this.sessionId}`;
+    // Use relative WebSocket URL that works on both local dev and Vercel
+    // On Vercel: same domain, same protocol (wss://)
+    // On local dev: localhost:8000 (backend runs separately)
+    const isLocalDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsHost = isLocalDev ? 'localhost:8000' : window.location.host;
+    const wsUrl = `${wsProtocol}//${wsHost}/ws?session_id=${this.sessionId}`;
     this.websocket = new WebSocket(wsUrl);
 
     this.websocket.onopen = () => {

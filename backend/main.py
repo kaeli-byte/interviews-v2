@@ -41,7 +41,8 @@ app.add_middleware(
 async def root():
     """Root endpoint - serves frontend or API info."""
     if settings.frontend_dist_exists:
-        return FileResponse(f"{settings.FRONTEND_BUILD_PATH}/index.html")
+        frontend_path = settings.get_frontend_build_path()
+        return FileResponse(f"{frontend_path}/index.html")
     # On Vercel without frontend build, serve API info
     return JSONResponse({
         "message": "Interview Practice API",

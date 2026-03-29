@@ -34,6 +34,7 @@ class Settings:
     # Frontend (for redirects)
     FRONTEND_DEV_URL: str = "http://localhost:3000"
     FRONTEND_BUILD_PATH: str = "frontend/.next/server/app"
+    FRONTEND_BUILD_PATH_ALT: str = ".next/server/app"  # Vercel builds to root on deployment
 
     # Demo mode
     MOCK_USER_ID: str = "demo_user"
@@ -53,7 +54,19 @@ class Settings:
     @property
     def frontend_dist_exists(self) -> bool:
         """Check if Next.js build exists."""
-        return Path(self.FRONTEND_BUILD_PATH).exists()
+        # Check multiple possible paths (local vs Vercel deployment)
+        return (
+            Path(self.FRONTEND_BUILD_PATH).exists() or
+            Path(self.FRONTEND_BUILD_PATH_ALT).exists()
+        )
+
+    def get_frontend_build_path(self) -> str:
+        """Get the actual frontend build path."""
+        if Path(self.FRONTEND_BUILD_PATH).exists():
+            return self.FRONTEND_BUILD_PATH
+        if Path(self.FRONTEND_BUILD_PATH_ALT).exists():
+            return self.FRONTEND_BUILD_PATH_ALT
+        return self.FRONTEND_BUILD_PATH  # fallback
 
 
 settings = Settings()
