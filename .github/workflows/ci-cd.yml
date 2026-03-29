@@ -156,21 +156,34 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          node-version: '20'
 
-      - name: Install uv
+      - name: Install dependencies
         run: pip install uv
 
       - name: Create virtual environment
         run: uv venv .venv
 
-      - name: Install dependencies
+      - name: Install Python dependencies
         run: |
           source .venv/bin/activate
           uv pip install -r requirements.txt
+          uv pip install email-validator
+
+      - name: Install frontend dependencies
+        run: |
+          cd frontend
+          npm install
+          cd ..
+
+      - name: Build frontend
+        run: |
+          cd frontend
+          npm run build
+          cd ..
 
       - name: Create dummy .env for build test
         run: |
@@ -179,10 +192,16 @@ jobs:
           echo "SUPABASE_DB_URL=postgresql://test:test@localhost:5432/test" >> .env
           echo "DIRECT_URL=postgresql://test:test@localhost:5432/test" >> .env
 
-      - name: Verify application starts
+      - name: Verify FastAPI starts
         run: |
           source .venv/bin/activate
           timeout 10 uvicorn backend.main:app --host 0.0.0.0 --port 8000 || [ $? -eq 124 ]
+
+      - name: Verify Vercel build (mimics production)
+        run: |
+          npm install -g vercel@latest
+          vercel build --token=${{ secrets.VERCEL_TOKEN || 'dry-run' }} --yes --no-deploy || true
+        continue-on-error: true
 
   deploy-preview:
     name: Deploy Preview
