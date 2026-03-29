@@ -1,5 +1,5 @@
 {
-  "buildCommand": "pip install -r requirements.txt",
+  "buildCommand": "cd frontend && npm install && npm run build && cd .. && pip install -r requirements.txt",
   "framework": "fastapi",
   "installCommand": "pip install -r requirements.txt"
 }

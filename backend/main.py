@@ -6,7 +6,7 @@ from typing import Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.websockets import WebSocket
 from google import genai
 
@@ -39,10 +39,15 @@ app.add_middleware(
 
 @app.get("/")
 async def root():
-    """Root endpoint - serves frontend or redirects."""
+    """Root endpoint - serves frontend or API info."""
     if settings.frontend_dist_exists:
         return FileResponse(f"{settings.FRONTEND_BUILD_PATH}/index.html")
-    return RedirectResponse(settings.FRONTEND_DEV_URL)
+    # On Vercel without frontend build, serve API info
+    return JSONResponse({
+        "message": "Interview Practice API",
+        "docs": "/docs",
+        "health": "/health"
+    })
 
 
 @app.get("/health")
