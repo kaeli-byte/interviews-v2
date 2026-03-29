@@ -9,14 +9,14 @@ from backend.api.interview_contexts import router as interview_contexts_router
 from backend.api.agents import router as agents_router
 from backend.api.debrief import router as debrief_router
 
-# Create main router
-api_router = APIRouter()
+# Create main router with /api prefix (Vercel mounts function at /api)
+api_router = APIRouter(prefix="/api")
 
 # Include sub-routers
-api_router.include_router(auth_router.router)
-api_router.include_router(documents_router.router)
-api_router.include_router(profiles_router.router)
-api_router.include_router(sessions_router.router)
-api_router.include_router(interview_contexts_router.router)
-api_router.include_router(agents_router.router)
-api_router.include_router(debrief_router.router)
+api_router.include_router(auth_router.router, prefix="/auth")
+api_router.include_router(documents_router.router, prefix="/documents")
+api_router.include_router(profiles_router.router, prefix="/profiles")
+api_router.include_router(sessions_router.router, prefix="/sessions")
+api_router.include_router(interview_contexts_router.router, prefix="/interview-contexts")
+api_router.include_router(agents_router.router, prefix="/agents")
+api_router.include_router(debrief_router.router, prefix="/debrief")

@@ -79,7 +79,7 @@ async def health_gemini():
         }
 
 
-@app.post("/api/token")
+@app.post("/token")
 async def get_ephemeral_token():
     """Generates an ephemeral token for direct Gemini Live API connection."""
     if not settings.GEMINI_API_KEY:
