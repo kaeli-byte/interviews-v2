@@ -173,9 +173,11 @@ jobs:
           uv pip install -r requirements.txt
           uv pip install email-validator
 
-      - name: Install frontend dependencies
+      - name: Clean npm cache and install
         run: |
           cd frontend
+          npm cache clean --force
+          rm -rf node_modules
           npm install
           cd ..
 
