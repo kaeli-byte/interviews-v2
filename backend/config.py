@@ -35,6 +35,7 @@ class Settings:
     FRONTEND_DEV_URL: str = "http://localhost:3000"
     FRONTEND_BUILD_PATH: str = "frontend/.next/server/app"
     FRONTEND_BUILD_PATH_ALT: str = ".next/server/app"  # Vercel builds to root on deployment
+    FRONTEND_STATIC_EXPORT: str = "out"  # Static export from Next.js
 
     # Demo mode
     MOCK_USER_ID: str = "demo_user"
@@ -62,11 +63,16 @@ class Settings:
 
     def get_frontend_build_path(self) -> str:
         """Get the actual frontend build path."""
+        # Check static export first (preferred for Vercel + FastAPI)
+        if Path(self.FRONTEND_STATIC_EXPORT).exists():
+            return self.FRONTEND_STATIC_EXPORT
+        # Check local Next.js build
         if Path(self.FRONTEND_BUILD_PATH).exists():
             return self.FRONTEND_BUILD_PATH
+        # Check Vercel Next.js build
         if Path(self.FRONTEND_BUILD_PATH_ALT).exists():
             return self.FRONTEND_BUILD_PATH_ALT
-        return self.FRONTEND_BUILD_PATH  # fallback
+        return self.FRONTEND_STATIC_EXPORT  # fallback
 
 
 settings = Settings()
