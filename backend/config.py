@@ -39,7 +39,11 @@ class Settings:
     MOCK_USER_ID: str = "demo_user"
 
     def __init__(self):
-        self.UPLOADS_DIR.mkdir(exist_ok=True)
+        try:
+            self.UPLOADS_DIR.mkdir(exist_ok=True)
+        except OSError:
+            # Read-only filesystem (e.g., Vercel) - skip directory creation
+            pass
 
     @property
     def is_production(self) -> bool:
