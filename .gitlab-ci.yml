@@ -1,0 +1,261 @@
+# GitLab CI/CD Pipeline for Gemini Live API Demo
+# Supports both traditional server deployment and Vercel deployment
+
+variables:
+  PYTHON_VERSION: '3.13'
+  UV_VERSION: '0.5.11'
+  VERCEL_TOKEN: $VERCEL_TOKEN
+  VERCEL_ORG_ID: $VERCEL_ORG_ID
+  VERCEL_PROJECT_ID: $VERCEL_PROJECT_ID
+
+stages:
+  - lint
+  - test
+  - security
+  - build
+  - deploy
+
+default:
+  image: python:$PYTHON_VERSION-slim
+  cache:
+    key: ${CI_COMMIT_REF_SLUG}
+    paths:
+      - .venv/
+      - ~/.cache/pip
+      - ~/.cache/uv
+
+# ============================================
+# LINT STAGE
+# ============================================
+lint:ruff:
+  stage: lint
+  before_script:
+    - pip install uv==$UV_VERSION
+    - uv venv .venv
+    - source .venv/bin/activate
+    - uv pip install -r requirements.txt
+    - uv pip install ruff
+  script:
+    - source .venv/bin/activate
+    - ruff check . --exit-zero
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_BRANCH == "develop"
+
+lint:bandit:
+  stage: lint
+  before_script:
+    - pip install uv==$UV_VERSION
+    - uv venv .venv
+    - source .venv/bin/activate
+    - uv pip install -r requirements.txt
+    - uv pip install bandit
+  script:
+    - source .venv/bin/activate
+    - bandit -r backend/ -f json -o bandit-report.json || true
+  artifacts:
+    when: always
+    paths:
+      - bandit-report.json
+    reports:
+      bandit: bandit-report.json
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_BRANCH == "develop"
+
+# ============================================
+# TEST STAGE
+# ============================================
+test:unit:
+  stage: test
+  parallel:
+    matrix:
+      - TEST_FILE: [test_auth, test_agents, test_sessions, test_documents]
+  before_script:
+    - pip install uv==$UV_VERSION
+    - uv venv .venv
+    - source .venv/bin/activate
+    - uv pip install -r requirements.txt
+    - uv pip install pytest pytest-asyncio pytest-cov httpx
+  script:
+    - source .venv/bin/activate
+    - pytest tests/$TEST_FILE.py -v --cov=backend --cov-report=xml --cov-report=term-missing
+  coverage: '/(?i)total.*? (100(?:\.0+)?\%|[1-9]?\d(?:\.\d+)?\%)$/'
+  artifacts:
+    when: always
+    paths:
+      - test-results.xml
+      - coverage/
+    reports:
+      junit: test-results.xml
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage/cobertura-coverage.xml
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_BRANCH == "develop"
+
+# ============================================
+# SECURITY STAGE
+# ============================================
+security:
+  stage: security
+  before_script:
+    - pip install uv==$UV_VERSION
+    - uv venv .venv
+    - source .venv/bin/activate
+    - uv pip install -r requirements.txt
+    - uv pip install pip-audit safety
+  script:
+    - |
+      echo "Running pip-audit..."
+      pip-audit -r requirements.txt || true
+    - |
+      echo "Running safety check..."
+      safety check --json | tee safety-report.json || true
+  artifacts:
+    when: always
+    paths:
+      - safety-report.json
+  allow_failure: true
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+
+# ============================================
+# BUILD STAGE
+# ============================================
+build:
+  stage: build
+  before_script:
+    - pip install uv==$UV_VERSION
+    - uv venv .venv
+    - source .venv/bin/activate
+    - uv pip install -r requirements.txt
+  script:
+    - |
+      echo "Verifying application can start..."
+      timeout 5 uvicorn main:app --host 0.0.0.0 --port 8000 || [ $? -eq 124 ]
+  artifacts:
+    paths:
+      - .venv/
+    expire_in: 1 day
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_BRANCH == "develop"
+
+# ============================================
+# DEPLOY STAGE - VERCEL
+# ============================================
+deploy:preview:
+  stage: deploy
+  image: node:20-slim
+  needs:
+    - lint:ruff
+    - lint:bandit
+    - test:unit
+    - security
+    - build
+  environment:
+    name: preview
+    url: https://$VERCEL_PROJECT_ID.vercel.app
+    on_stop: stop:preview
+  before_script:
+    - npm install -g vercel@latest
+  script:
+    - vercel pull --yes --environment=preview --token=$VERCEL_TOKEN
+    - vercel build --token=$VERCEL_TOKEN
+    - vercel deploy --prebuilt --token=$VERCEL_TOKEN
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  when: manual
+
+deploy:staging:
+  stage: deploy
+  image: node:20-slim
+  needs:
+    - lint:ruff
+    - lint:bandit
+    - test:unit
+    - security
+    - build
+  environment:
+    name: staging
+    url: https://staging.example.com
+  before_script:
+    - npm install -g vercel@latest
+  script:
+    - vercel pull --yes --environment=preview --token=$VERCEL_TOKEN
+    - vercel build --token=$VERCEL_TOKEN
+    - echo "Deploying to staging..."
+  rules:
+    - if: $CI_COMMIT_BRANCH == "develop"
+  when: manual
+
+deploy:production:
+  stage: deploy
+  image: node:20-slim
+  needs:
+    - lint:ruff
+    - lint:bandit
+    - test:unit
+    - security
+    - build
+  environment:
+    name: production
+    url: https://example.com
+  before_script:
+    - npm install -g vercel@latest
+  script:
+    - vercel pull --yes --environment=production --token=$VERCEL_TOKEN
+    - vercel build --prod --token=$VERCEL_TOKEN
+    - vercel deploy --prebuilt --prod --token=$VERCEL_TOKEN
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+  when: manual
+
+# ============================================
+# CLEANUP STAGE
+# ============================================
+stop:preview:
+  stage: deploy
+  image: node:20-slim
+  environment:
+    name: preview
+    action: stop
+  script:
+    - echo "Cleaning up preview deployment..."
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  when: manual
+
+# ============================================
+# NOTIFICATIONS
+# ============================================
+notify:success:
+  stage: notify
+  image: alpine:latest
+  before_script:
+    - apk add --no-cache curl
+  script:
+    - |
+      echo "Deployment successful!"
+      # Add webhook notification here
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: on_success
+
+notify:failure:
+  stage: notify
+  image: alpine:latest
+  before_script:
+    - apk add --no-cache curl
+  script:
+    - |
+      echo "Pipeline failed!"
+      # Add failure notification webhook here
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: on_failure
