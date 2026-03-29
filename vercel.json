@@ -1,0 +1,6 @@
+{
+  "buildCommand": "pip install -r requirements.txt",
+  "framework": "fastapi",
+  "installCommand": "pip install -r requirements.txt",
+  "entrypoint": "api/index.py"
+}
