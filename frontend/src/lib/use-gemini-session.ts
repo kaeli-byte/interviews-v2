@@ -239,8 +239,12 @@ export function useGeminiSession(options: UseGeminiSessionOptions = {}): UseGemi
     return () => {
       clientRef.current?.disconnect();
       mediaHandlerRef.current?.stopAudio();
-      if (mediaHandlerRef.current?.audioContext) {
-        void mediaHandlerRef.current.audioContext.close();
+      // Close audio contexts if they exist
+      if (mediaHandlerRef.current?.captureAudioContext) {
+        void mediaHandlerRef.current.captureAudioContext.close();
+      }
+      if (mediaHandlerRef.current?.playbackAudioContext) {
+        void mediaHandlerRef.current.playbackAudioContext.close();
       }
     };
   }, []);
