@@ -2,7 +2,10 @@
 import logging
 import os
 from datetime import datetime, timedelta, timezone
+from time import perf_counter
 from typing import Optional
+
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,7 +13,10 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.websockets import WebSocket
 from google import genai
 
+from backend.api.agents import service as agent_service
 from backend.api.router import api_router
+from backend.db import queries as db
+from backend.perf import TimingCollector, reset_current_collector, set_current_collector
 from backend.config import settings
 from backend.websocket.handlers import handle_websocket
 
@@ -19,22 +25,66 @@ logging.basicConfig(level=logging.INFO)
 logging.getLogger("backend").setLevel(logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-# Initialize FastAPI
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    """Prepare DB resources for the application lifecycle."""
+    if not settings.has_local_supabase_jwt_verification:
+        logger.warning(
+            "SUPABASE_JWT_SECRET is not configured. Auth will fall back to remote Supabase user lookups, "
+            "which adds avoidable latency to authenticated requests."
+        )
+    if settings.uses_placeholder_app_jwt_secret:
+        logger.warning(
+            "JWT_SECRET_KEY is still using the placeholder value. This does not enable local Supabase JWT "
+            "verification and should not be used in production."
+        )
+    try:
+        await db.get_pool()
+        await agent_service.ensure_seeded()
+    except Exception as exc:
+        logger.warning("Skipping startup DB seed: %s", exc)
+    yield
+    try:
+        await db.close_pool()
+    except Exception:
+        pass
+
+
 app = FastAPI(
     title="Interview Practice API",
     description="Backend for Gemini Live interview practice application",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
-# Add CORS middleware - be permissive for development
+# Add CORS middleware from environment configuration.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
     expose_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def server_timing_middleware(request, call_next):
+    """Attach request-scoped timings and emit Server-Timing headers."""
+    collector = TimingCollector()
+    request.state.timing = collector
+    token = set_current_collector(collector)
+    started = perf_counter()
+    try:
+        response = await call_next(request)
+    finally:
+        collector.add_duration("request.total", (perf_counter() - started) * 1000)
+        reset_current_collector(token)
+
+    header = collector.as_header()
+    if header:
+        response.headers["Server-Timing"] = header
+    return response
 
 
 @app.get("/")
