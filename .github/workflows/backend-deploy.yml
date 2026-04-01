@@ -108,7 +108,8 @@ jobs:
     name: deploy_prod_backend
     if: >-
       ${{
-        (github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dockerize-backend-deploy')
+        always()
+        && (github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dockerize-backend-deploy')
         && !contains(needs.*.result, 'failure')
         && !contains(needs.*.result, 'cancelled')
       }}
