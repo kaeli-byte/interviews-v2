@@ -233,11 +233,9 @@ jobs:
           PROD_VPS_USER: ${{ secrets.PROD_VPS_USER }}
           PROD_VPS_SSH_KEY: ${{ secrets.PROD_VPS_SSH_KEY }}
           PROD_VPS_DEPLOY_PATH: ${{ secrets.PROD_VPS_DEPLOY_PATH }}
-          PROD_VPS_CONTAINER_NAME: ${{ secrets.PROD_VPS_CONTAINER_NAME }}
-          PROD_VPS_ENV_FILE: ${{ secrets.PROD_VPS_ENV_FILE }}
-          PROD_VPS_HOST_PORT: ${{ secrets.PROD_VPS_HOST_PORT }}
+          PROD_VPS_BRANCH: ${{ secrets.PROD_VPS_BRANCH }}
         run: |
-          for var in PROD_VPS_HOST PROD_VPS_USER PROD_VPS_SSH_KEY PROD_VPS_DEPLOY_PATH PROD_VPS_CONTAINER_NAME PROD_VPS_ENV_FILE PROD_VPS_HOST_PORT; do
+          for var in PROD_VPS_HOST PROD_VPS_USER PROD_VPS_SSH_KEY PROD_VPS_DEPLOY_PATH; do
             if [ -z "${!var}" ]; then
               echo "ERROR: $var is required for production deployments"
               exit 1
@@ -250,9 +248,7 @@ jobs:
           PROD_VPS_USER: ${{ secrets.PROD_VPS_USER }}
           PROD_VPS_SSH_KEY: ${{ secrets.PROD_VPS_SSH_KEY }}
           PROD_VPS_DEPLOY_PATH: ${{ secrets.PROD_VPS_DEPLOY_PATH }}
-          PROD_VPS_CONTAINER_NAME: ${{ secrets.PROD_VPS_CONTAINER_NAME }}
-          PROD_VPS_ENV_FILE: ${{ secrets.PROD_VPS_ENV_FILE }}
-          PROD_VPS_HOST_PORT: ${{ secrets.PROD_VPS_HOST_PORT }}
+          PROD_VPS_BRANCH: ${{ secrets.PROD_VPS_BRANCH }}
           TARGET_SHA: ${{ github.sha }}
         shell: bash
         run: |
@@ -263,30 +259,20 @@ jobs:
 
           ssh -i /tmp/prod_vps_key "$PROD_VPS_USER@$PROD_VPS_HOST" \
             DEPLOY_PATH="$PROD_VPS_DEPLOY_PATH" \
-            CONTAINER_NAME="$PROD_VPS_CONTAINER_NAME" \
-            ENV_FILE="$PROD_VPS_ENV_FILE" \
-            HOST_PORT="$PROD_VPS_HOST_PORT" \
+            DEPLOY_BRANCH="${PROD_VPS_BRANCH:-dockerize-backend-deploy}" \
             TARGET_SHA="$TARGET_SHA" \
             'bash -se' <<EOF
           set -euo pipefail
           cd "$DEPLOY_PATH"
-          git fetch origin main
-          git checkout main
+          git fetch origin "$DEPLOY_BRANCH"
+          git checkout "$DEPLOY_BRANCH"
           git reset --hard "$TARGET_SHA"
           mkdir -p uploads
-          test -f "$ENV_FILE"
-          docker build -t "$CONTAINER_NAME:$TARGET_SHA" -t "$CONTAINER_NAME:latest" .
-          if docker ps -a --format '{{.Names}}' | grep -Fxq "$CONTAINER_NAME"; then
-            docker rm -f "$CONTAINER_NAME"
-          fi
-          docker run -d \
-            --name "$CONTAINER_NAME" \
-            --restart unless-stopped \
-            --env-file "$ENV_FILE" \
-            -p "127.0.0.1:$HOST_PORT:8000" \
-            -v "$DEPLOY_PATH/uploads:/app/uploads" \
-            "$CONTAINER_NAME:latest"
-          curl --fail --silent --show-error "http://127.0.0.1:$HOST_PORT/health" > /dev/null
+          test -f docker-compose.yml
+          test -f /etc/ai-interview/backend.env
+          docker compose up -d --build
+          docker compose ps
+          curl --fail --silent --show-error "http://127.0.0.1:8000/health" > /dev/null
           EOF
 
   deploy_vercel_preview:
