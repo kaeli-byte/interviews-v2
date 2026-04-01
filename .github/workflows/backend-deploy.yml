@@ -1,17 +1,6 @@
 name: Backend Deploy
 
 on:
-  workflow_dispatch:
-    inputs:
-      deploy_ref:
-        description: "Git ref to deploy on the VPS"
-        required: false
-        default: ""
-      skip_checks:
-        description: "Skip backend validation jobs and deploy immediately"
-        required: false
-        type: boolean
-        default: false
   push:
     branches:
       - main
@@ -31,12 +20,9 @@ env:
 jobs:
   lint_backend:
     name: lint_backend
-    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.skip_checks }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.deploy_ref || github.ref }}
 
       - uses: actions/setup-python@v5
         with:
@@ -61,14 +47,50 @@ jobs:
           source .venv/bin/activate
           ruff check backend api
 
+  test_backend:
+    name: test_backend
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        test_file:
+          - tests/test_auth.py
+          - tests/test_agents.py
+          - tests/test_sessions.py
+          - tests/test_documents.py
+          - tests/test_perf.py
+          - tests/test_profiles_service.py
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Create virtual environment
+        run: uv venv .venv
+
+      - name: Install backend dependencies
+        shell: bash
+        run: |
+          source .venv/bin/activate
+          uv pip install -r requirements.txt
+          uv pip install pytest pytest-asyncio pytest-cov httpx
+
+      - name: Run backend tests
+        shell: bash
+        run: |
+          source .venv/bin/activate
+          pytest "${{ matrix.test_file }}" -q
+
   smoke_backend_startup:
     name: smoke_backend_startup
-    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.skip_checks }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.deploy_ref || github.ref }}
 
       - uses: actions/setup-python@v5
         with:
@@ -94,76 +116,18 @@ jobs:
 
   smoke_backend_container_build:
     name: smoke_backend_container_build
-    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.skip_checks }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.deploy_ref || github.ref }}
 
       - name: Build backend Docker image
         run: docker build -t interview-backend:test .
 
-  deploy_prod_backend_manual:
+  deploy_prod_backend:
     name: deploy_prod_backend
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.skip_checks }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Validate production VPS configuration
-        env:
-          PROD_VPS_HOST: ${{ secrets.PROD_VPS_HOST }}
-          PROD_VPS_USER: ${{ secrets.PROD_VPS_USER }}
-          PROD_VPS_SSH_KEY: ${{ secrets.PROD_VPS_SSH_KEY }}
-          PROD_VPS_DEPLOY_PATH: ${{ secrets.PROD_VPS_DEPLOY_PATH }}
-          PROD_VPS_BRANCH: ${{ secrets.PROD_VPS_BRANCH }}
-        run: |
-          for var in PROD_VPS_HOST PROD_VPS_USER PROD_VPS_SSH_KEY PROD_VPS_DEPLOY_PATH; do
-            if [ -z "${!var}" ]; then
-              echo "ERROR: $var is required for production deployments"
-              exit 1
-            fi
-          done
-
-      - name: Deploy production backend to VPS
-        env:
-          PROD_VPS_HOST: ${{ secrets.PROD_VPS_HOST }}
-          PROD_VPS_USER: ${{ secrets.PROD_VPS_USER }}
-          PROD_VPS_SSH_KEY: ${{ secrets.PROD_VPS_SSH_KEY }}
-          PROD_VPS_DEPLOY_PATH: ${{ secrets.PROD_VPS_DEPLOY_PATH }}
-          PROD_VPS_BRANCH: ${{ secrets.PROD_VPS_BRANCH }}
-          INPUT_DEPLOY_REF: ${{ inputs.deploy_ref }}
-        shell: bash
-        run: |
-          mkdir -p ~/.ssh
-          printf '%s\n' "$PROD_VPS_SSH_KEY" > /tmp/prod_vps_key
-          chmod 600 /tmp/prod_vps_key
-          ssh-keyscan -H "$PROD_VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null
-          DEPLOY_BRANCH="${INPUT_DEPLOY_REF:-${PROD_VPS_BRANCH:-$DEFAULT_DEPLOY_BRANCH}}"
-
-          ssh -i /tmp/prod_vps_key "$PROD_VPS_USER@$PROD_VPS_HOST" 'bash -se' <<EOF2
-          set -euo pipefail
-          cd "$PROD_VPS_DEPLOY_PATH"
-          git fetch origin "$DEPLOY_BRANCH"
-          git checkout "$DEPLOY_BRANCH"
-          git reset --hard "origin/$DEPLOY_BRANCH"
-          mkdir -p uploads
-          test -f docker-compose.yml
-          test -f /etc/ai-interview/backend.env
-          docker compose up -d --build
-          docker compose ps
-          curl --fail --silent --show-error "http://127.0.0.1:8000/health" > /dev/null
-          EOF2
-
-  deploy_prod_backend_checked:
-    name: deploy_prod_backend_checked
-    if: >-
-      ${{
-        github.event_name != 'workflow_dispatch'
-        && !contains(needs.*.result, 'failure')
-        && !contains(needs.*.result, 'cancelled')
-      }}
     needs:
       - lint_backend
+      - test_backend
       - smoke_backend_startup
       - smoke_backend_container_build
     runs-on: ubuntu-latest
@@ -190,14 +154,13 @@ jobs:
           PROD_VPS_SSH_KEY: ${{ secrets.PROD_VPS_SSH_KEY }}
           PROD_VPS_DEPLOY_PATH: ${{ secrets.PROD_VPS_DEPLOY_PATH }}
           PROD_VPS_BRANCH: ${{ secrets.PROD_VPS_BRANCH }}
-          INPUT_DEPLOY_REF: ${{ inputs.deploy_ref }}
         shell: bash
         run: |
           mkdir -p ~/.ssh
           printf '%s\n' "$PROD_VPS_SSH_KEY" > /tmp/prod_vps_key
           chmod 600 /tmp/prod_vps_key
           ssh-keyscan -H "$PROD_VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null
-          DEPLOY_BRANCH="${INPUT_DEPLOY_REF:-${PROD_VPS_BRANCH:-$DEFAULT_DEPLOY_BRANCH}}"
+          DEPLOY_BRANCH="${PROD_VPS_BRANCH:-$DEFAULT_DEPLOY_BRANCH}"
 
           ssh -i /tmp/prod_vps_key "$PROD_VPS_USER@$PROD_VPS_HOST" 'bash -se' <<EOF2
           set -euo pipefail
@@ -216,9 +179,7 @@ jobs:
   post_deploy_smoke:
     name: post_deploy_smoke
     needs:
-      - deploy_prod_backend_manual
-      - deploy_prod_backend_checked
-    if: ${{ always() && (needs.deploy_prod_backend_manual.result == 'success' || needs.deploy_prod_backend_checked.result == 'success') }}
+      - deploy_prod_backend
     runs-on: ubuntu-latest
     steps:
       - name: Check production backend health
