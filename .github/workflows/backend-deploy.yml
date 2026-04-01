@@ -190,7 +190,6 @@ jobs:
           PROD_VPS_SSH_KEY: ${{ secrets.PROD_VPS_SSH_KEY }}
           PROD_VPS_DEPLOY_PATH: ${{ secrets.PROD_VPS_DEPLOY_PATH }}
           PROD_VPS_BRANCH: ${{ secrets.PROD_VPS_BRANCH }}
-          TARGET_SHA: ${{ github.sha }}
           INPUT_DEPLOY_REF: ${{ inputs.deploy_ref }}
         shell: bash
         run: |

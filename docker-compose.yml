@@ -1,0 +1,19 @@
+networks:
+  proxy:
+    external: true
+
+services:
+  interview-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: interview-backend
+    env_file:
+      - /etc/ai-interview/backend.env
+    volumes:
+      - /root/ai-interview-backend/uploads:/app/uploads
+    ports:
+      - "8000:8000"
+    networks:
+      - proxy
+    restart: unless-stopped
