@@ -143,8 +143,6 @@ jobs:
           ssh -i /tmp/prod_vps_key "$PROD_VPS_USER@$PROD_VPS_HOST" 'bash -se' <<EOF2
           set -euo pipefail
           cd "$PROD_VPS_DEPLOY_PATH"
-          pwd
-          ls -la .git
           git fetch origin "$DEPLOY_BRANCH"
           git checkout "$DEPLOY_BRANCH"
           git reset --hard "origin/$DEPLOY_BRANCH"
@@ -200,17 +198,14 @@ jobs:
           printf '%s\n' "$PROD_VPS_SSH_KEY" > /tmp/prod_vps_key
           chmod 600 /tmp/prod_vps_key
           ssh-keyscan -H "$PROD_VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          DEPLOY_BRANCH="${INPUT_DEPLOY_REF:-${PROD_VPS_BRANCH:-$DEFAULT_DEPLOY_BRANCH}}"
 
-          ssh -i /tmp/prod_vps_key "$PROD_VPS_USER@$PROD_VPS_HOST" \
-            DEPLOY_PATH="$PROD_VPS_DEPLOY_PATH" \
-            DEPLOY_BRANCH="${INPUT_DEPLOY_REF:-${PROD_VPS_BRANCH:-$DEFAULT_DEPLOY_BRANCH}}" \
-            TARGET_SHA="$TARGET_SHA" \
-            'bash -se' <<EOF2
+          ssh -i /tmp/prod_vps_key "$PROD_VPS_USER@$PROD_VPS_HOST" 'bash -se' <<EOF2
           set -euo pipefail
-          cd "$DEPLOY_PATH"
+          cd "$PROD_VPS_DEPLOY_PATH"
           git fetch origin "$DEPLOY_BRANCH"
           git checkout "$DEPLOY_BRANCH"
-          git reset --hard "$TARGET_SHA"
+          git reset --hard "origin/$DEPLOY_BRANCH"
           mkdir -p uploads
           test -f docker-compose.yml
           test -f /etc/ai-interview/backend.env
