@@ -104,12 +104,65 @@ jobs:
       - name: Build backend Docker image
         run: docker build -t interview-backend:test .
 
-  deploy_prod_backend:
+  deploy_prod_backend_manual:
     name: deploy_prod_backend
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.skip_checks }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate production VPS configuration
+        env:
+          PROD_VPS_HOST: ${{ secrets.PROD_VPS_HOST }}
+          PROD_VPS_USER: ${{ secrets.PROD_VPS_USER }}
+          PROD_VPS_SSH_KEY: ${{ secrets.PROD_VPS_SSH_KEY }}
+          PROD_VPS_DEPLOY_PATH: ${{ secrets.PROD_VPS_DEPLOY_PATH }}
+          PROD_VPS_BRANCH: ${{ secrets.PROD_VPS_BRANCH }}
+        run: |
+          for var in PROD_VPS_HOST PROD_VPS_USER PROD_VPS_SSH_KEY PROD_VPS_DEPLOY_PATH; do
+            if [ -z "${!var}" ]; then
+              echo "ERROR: $var is required for production deployments"
+              exit 1
+            fi
+          done
+
+      - name: Deploy production backend to VPS
+        env:
+          PROD_VPS_HOST: ${{ secrets.PROD_VPS_HOST }}
+          PROD_VPS_USER: ${{ secrets.PROD_VPS_USER }}
+          PROD_VPS_SSH_KEY: ${{ secrets.PROD_VPS_SSH_KEY }}
+          PROD_VPS_DEPLOY_PATH: ${{ secrets.PROD_VPS_DEPLOY_PATH }}
+          PROD_VPS_BRANCH: ${{ secrets.PROD_VPS_BRANCH }}
+          TARGET_SHA: ${{ github.sha }}
+          INPUT_DEPLOY_REF: ${{ inputs.deploy_ref }}
+        shell: bash
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$PROD_VPS_SSH_KEY" > /tmp/prod_vps_key
+          chmod 600 /tmp/prod_vps_key
+          ssh-keyscan -H "$PROD_VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+          ssh -i /tmp/prod_vps_key "$PROD_VPS_USER@$PROD_VPS_HOST" \
+            DEPLOY_PATH="$PROD_VPS_DEPLOY_PATH" \
+            DEPLOY_BRANCH="${INPUT_DEPLOY_REF:-${PROD_VPS_BRANCH:-$DEFAULT_DEPLOY_BRANCH}}" \
+            TARGET_SHA="$TARGET_SHA" \
+            'bash -se' <<EOF2
+          set -euo pipefail
+          cd "$DEPLOY_PATH"
+          git fetch origin "$DEPLOY_BRANCH"
+          git checkout "$DEPLOY_BRANCH"
+          git reset --hard "$TARGET_SHA"
+          mkdir -p uploads
+          test -f docker-compose.yml
+          test -f /etc/ai-interview/backend.env
+          docker compose up -d --build
+          docker compose ps
+          curl --fail --silent --show-error "http://127.0.0.1:8000/health" > /dev/null
+          EOF2
+
+  deploy_prod_backend_checked:
+    name: deploy_prod_backend_checked
     if: >-
       ${{
-        always()
-        && (github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dockerize-backend-deploy')
+        github.event_name != 'workflow_dispatch'
         && !contains(needs.*.result, 'failure')
         && !contains(needs.*.result, 'cancelled')
       }}
@@ -171,7 +224,9 @@ jobs:
   post_deploy_smoke:
     name: post_deploy_smoke
     needs:
-      - deploy_prod_backend
+      - deploy_prod_backend_manual
+      - deploy_prod_backend_checked
+    if: ${{ always() && (needs.deploy_prod_backend_manual.result == 'success' || needs.deploy_prod_backend_checked.result == 'success') }}
     runs-on: ubuntu-latest
     steps:
       - name: Check production backend health
