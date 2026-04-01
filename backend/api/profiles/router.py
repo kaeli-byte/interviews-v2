@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from backend.api.profiles import schemas as profile_schemas
 from backend.api.profiles import service as profile_service
+from backend.api.profiles.service_extractor import LLMTemporaryUnavailableError
 from backend.dependencies import get_current_user
 
 router = APIRouter(prefix="/api/profiles", tags=["profiles"])
@@ -19,6 +20,8 @@ async def extract_resume_profile(
     try:
         profile = await profile_service.extract_resume_profile(user_id, data.document_id)
         return profile
+    except LLMTemporaryUnavailableError as e:
+        raise HTTPException(status_code=503, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -34,6 +37,8 @@ async def extract_job_profile(
     try:
         profile = await profile_service.extract_job_profile(user_id, data.document_id)
         return profile
+    except LLMTemporaryUnavailableError as e:
+        raise HTTPException(status_code=503, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -43,7 +48,7 @@ async def get_profile(profile_id: str, current_user: dict = Depends(get_current_
     """Get a profile by ID."""
     user_id = current_user["id"]
 
-    profile = profile_service.get_profile(profile_id)
+    profile = await profile_service.get_profile(profile_id)
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
 

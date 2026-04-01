@@ -18,7 +18,7 @@ async def generate_debrief(
     user_id = current_user["id"]
 
     # Get session
-    session = session_service.get_session(data.session_id)
+    session = await session_service.get_session(data.session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
@@ -39,13 +39,20 @@ async def generate_debrief(
     return debrief
 
 
+@router.get("/history")
+async def get_debrief_history(current_user: dict = Depends(get_current_user)):
+    """Get all debriefs for the current user."""
+    user_id = current_user["id"]
+    return debrief_service.get_debriefs_by_user(user_id)
+
+
 @router.get("/{session_id}", response_model=debrief_schemas.DebriefResponse)
 async def get_session_debrief(session_id: str, current_user: dict = Depends(get_current_user)):
     """Get debrief for a session."""
     user_id = current_user["id"]
 
     # Verify session ownership
-    session = session_service.get_session(session_id)
+    session = await session_service.get_session(session_id)
     if not session or session.get("user_id") != user_id:
         raise HTTPException(status_code=404, detail="Session not found")
 
@@ -56,31 +63,24 @@ async def get_session_debrief(session_id: str, current_user: dict = Depends(get_
     return debrief
 
 
-@router.get("/history")
-async def get_debrief_history(current_user: dict = Depends(get_current_user)):
-    """Get all debriefs for the current user."""
-    user_id = current_user["id"]
-    return debrief_service.get_debriefs_by_user(user_id)
-
-
 @router.post("/{session_id}/regenerate", response_model=debrief_schemas.DebriefResponse)
 async def regenerate_debrief(
     session_id: str,
-    data: debrief_schemas.GenerateDebriefRequest,
+    data: debrief_schemas.GenerateDebriefRequest | None = None,
     current_user: dict = Depends(get_current_user)
 ):
     """Regenerate debrief for a session."""
     user_id = current_user["id"]
 
     # Verify session ownership
-    session = session_service.get_session(session_id)
+    session = await session_service.get_session(session_id)
     if not session or session.get("user_id") != user_id:
         raise HTTPException(status_code=404, detail="Session not found")
 
     # Delete existing and regenerate
     debrief_service.delete_debrief(session_id)
 
-    rubric = data.custom_rubric or []
+    rubric = data.custom_rubric if data else []
     transcript = session.get("transcript", [])
     debrief = await debrief_service.generate_debrief(
         session_id=session_id,

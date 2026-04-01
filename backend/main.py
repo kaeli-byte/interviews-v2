@@ -2,11 +2,10 @@
 import logging
 import os
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.websockets import WebSocket
 from google import genai
 
@@ -39,9 +38,10 @@ app.add_middleware(
 
 @app.get("/")
 async def root():
-    """Root endpoint - serves API info."""
-    # Next.js handles frontend at /, /dashboard, etc.
-    # This endpoint just provides API info
+    """Root endpoint - serves frontend or API info."""
+    if settings.frontend_dist_exists:
+        return FileResponse(f"{settings.FRONTEND_BUILD_PATH}/index.html")
+    # On Vercel without frontend build, serve API info
     return JSONResponse({
         "message": "Interview Practice API",
         "docs": "/docs",
@@ -63,7 +63,7 @@ async def health_gemini():
     try:
         client = genai.Client(api_key=settings.GEMINI_API_KEY)
         # Simple models.list call to verify API key works
-        models = client.models.list()
+        client.models.list()
         return {
             "status": "healthy",
             "gemini_connected": True,
@@ -77,7 +77,7 @@ async def health_gemini():
         }
 
 
-@app.post("/token")
+@app.post("/api/token")
 async def get_ephemeral_token():
     """Generates an ephemeral token for direct Gemini Live API connection."""
     if not settings.GEMINI_API_KEY:
@@ -181,14 +181,14 @@ async def get_ephemeral_token():
 
 
 @app.websocket("/ws-test-new")
-async def websocket_endpoint(websocket: WebSocket):
+async def websocket_test_new_endpoint(websocket: WebSocket):
     """WebSocket endpoint for Gemini Live - inline test."""
     await websocket.accept()
     logger.info("WebSocket accepted")
 
 
 @app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
+async def websocket_live_endpoint(websocket: WebSocket):
     """WebSocket endpoint for Gemini Live."""
     await handle_websocket(websocket, None)
 

@@ -12,4 +12,6 @@ passlib[bcrypt]
 python-jose[cryptography]
 asyncpg
 pytest
+pytest-asyncio
+pytest-cov
 email-validator

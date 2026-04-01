@@ -2,7 +2,6 @@
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException
-from fastapi.responses import JSONResponse
 
 from backend.api.auth import schemas as auth_schemas
 from backend.api.auth import service as auth_service
@@ -33,15 +32,10 @@ async def login(data: auth_schemas.LoginRequest):
 
 @router.post("/logout")
 async def logout(authorization: Optional[str] = Header(None)):
-    """Logout a user (blacklist token)."""
-    from backend.dependencies import blacklisted_tokens
-
+    """Logout acknowledgement for client-managed Supabase auth."""
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Invalid authorization format")
-
-    token = authorization.split(" ")[1]
-    blacklisted_tokens.add(token)
-    return {"message": "Successfully logged out"}
+    return {"message": "Sign out from the frontend Supabase session to complete logout"}
 
 
 @router.get("/me", response_model=auth_schemas.UserResponse)

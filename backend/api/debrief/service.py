@@ -49,7 +49,7 @@ Return JSON with:
     try:
         client = genai.Client(api_key=settings.GEMINI_API_KEY)
         response = client.models.generate_content(
-            model=settings.MODEL,
+            model=settings.MODEL_EXTRACT,
             contents=prompt,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json"

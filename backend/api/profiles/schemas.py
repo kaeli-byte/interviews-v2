@@ -1,5 +1,6 @@
 """Profiles Pydantic schemas."""
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
+
 from pydantic import BaseModel
 
 
@@ -18,9 +19,9 @@ class ResumeProfileResponse(BaseModel):
     name: str
     headline: str
     skills: List[str]
-    experience: List[dict]
-    education: List[dict]
-    confidence_score: float
+    experience: Any
+    structured_json: Dict[str, Any] = {}
+    summary_text: Optional[str] = None
     created_at: str
 
 
@@ -31,6 +32,8 @@ class JobProfileResponse(BaseModel):
     company: str
     role: str
     requirements: List[str]
-    nice_to_have: List[str]
-    responsibilities: List[str]
+    nice_to_have: List[str] = []
+    responsibilities: List[str] = []
+    structured_json: Dict[str, Any] = {}
+    summary_text: Optional[str] = None
     created_at: str

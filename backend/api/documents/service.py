@@ -1,4 +1,5 @@
-"""Document service - handles file processing and storage."""
+"""Document ingestion service backed by Supabase Storage and Postgres."""
+import mimetypes
 import uuid
 from pathlib import Path
 from typing import Optional
@@ -6,174 +7,206 @@ from typing import Optional
 import httpx
 from bs4 import BeautifulSoup
 
-
-# In-memory document storage (for MVP - use database in production)
-documents_db: dict = {}
-
-
-def get_user_dir(user_id: str) -> Path:
-    """Get or create user's upload directory."""
-    from backend.config import settings
-    user_dir = settings.UPLOADS_DIR / user_id
-    user_dir.mkdir(parents=True, exist_ok=True)
-    return user_dir
+from backend.config import settings
+from backend.db import queries as db
+from backend.api.documents.service_parser import (
+    extract_resume_hints,
+    normalize_extracted_text,
+    parse_document_content,
+)
 
 
-def read_pdf_content(file_path: Path) -> str:
-    """Extract text from PDF file using pypdf."""
-    from pypdf import PdfReader
-    try:
-        reader = PdfReader(file_path)
-        text = ""
-        for page in reader.pages:
-            text += page.extract_text() or ""
-        return text
-    except Exception as e:
-        raise ValueError(f"Failed to read PDF: {str(e)}")
+async def upload_bytes_to_storage(storage_path: str, content: bytes, mime_type: str) -> None:
+    """Upload file bytes to Supabase Storage."""
+    if not settings.SUPABASE_URL or not settings.SUPABASE_SERVICE_ROLE_KEY:
+        raise ValueError("Supabase storage is not configured")
+
+    url = (
+        f"{settings.SUPABASE_URL.rstrip('/')}/storage/v1/object/"
+        f"{settings.SUPABASE_STORAGE_BUCKET}/{storage_path}"
+    )
+    headers = {
+        "Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}",
+        "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
+        "Content-Type": mime_type,
+        "x-upsert": "true",
+    }
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.post(url, headers=headers, content=content)
+
+    if response.status_code >= 300:
+        raise ValueError(f"Storage upload failed: {response.text}")
 
 
-def read_docx_content(file_path: Path) -> str:
-    """Extract text from DOCX file using python-docx."""
-    from docx import Document
-    try:
-        doc = Document(file_path)
-        text = "\n".join([paragraph.text for paragraph in doc.paragraphs])
-        return text
-    except Exception as e:
-        raise ValueError(f"Failed to read DOCX: {str(e)}")
+async def _create_document(
+    *,
+    user_id: str,
+    kind: str,
+    source_type: str,
+    filename: Optional[str],
+    mime_type: Optional[str],
+    storage_path: Optional[str],
+    source_url: Optional[str],
+    raw_text: str,
+    content: Optional[dict] = None,
+) -> dict:
+    normalized_text = normalize_extracted_text(raw_text)
+    document = await db.create_document(
+        user_id=user_id,
+        kind=kind,
+        source_type=source_type,
+        filename=filename,
+        mime_type=mime_type,
+        storage_path=storage_path,
+        source_url=source_url,
+        raw_text=normalized_text,
+        content=content,
+        parse_status="parsed",
+    )
+    return {
+        "document_id": document["id"],
+        "filename": document["filename"],
+        "type": document["kind"],
+        "source_type": document["source_type"],
+        "mime_type": document["mime_type"],
+        "storage_path": document["storage_path"],
+        "parse_status": document["parse_status"],
+        "created_at": document["created_at"],
+    }
 
 
 async def upload_resume(user_id: str, filename: str, content: bytes) -> dict:
-    """Upload a resume document."""
-    from datetime import datetime
-
-    allowed_extensions = {".pdf", ".docx"}
+    """Upload and parse a resume."""
     file_ext = Path(filename).suffix.lower()
+    if file_ext not in {".pdf", ".docx"}:
+        raise ValueError("Invalid file type. Please upload a PDF or DOCX file.")
 
-    if file_ext not in allowed_extensions:
-        raise ValueError(f"Invalid file type. Allowed: {', '.join(allowed_extensions)}")
+    mime_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+    parsed_text = parse_document_content(filename, content)
+    if not parsed_text.strip():
+        raise ValueError("Resume could not be parsed")
+    structured = extract_resume_hints(parsed_text)
 
-    unique_id = uuid.uuid4().hex[:8]
-    safe_filename = f"{unique_id}_{filename}"
+    storage_path = f"resumes/{user_id}/{uuid.uuid4().hex}{file_ext}"
+    await upload_bytes_to_storage(storage_path, content, mime_type)
 
-    user_dir = get_user_dir(user_id)
-    resumes_dir = user_dir / "resumes"
-    resumes_dir.mkdir(exist_ok=True)
-    file_path = resumes_dir / safe_filename
-
-    with open(file_path, "wb") as f:
-        f.write(content)
-
-    doc_id = uuid.uuid4().hex
-    document = {
-        "document_id": doc_id,
-        "filename": filename,
-        "stored_filename": safe_filename,
-        "type": "resume",
-        "file_type": file_ext[1:].upper(),
-        "size": len(content),
-        "created_at": datetime.utcnow().isoformat(),
-        "user_id": user_id,
-        "file_path": str(file_path)
-    }
-    documents_db[doc_id] = document
-    return document
+    result = await _create_document(
+        user_id=user_id,
+        kind="resume",
+        source_type="file",
+        filename=filename,
+        mime_type=mime_type,
+        storage_path=storage_path,
+        source_url=None,
+        raw_text=parsed_text,
+        content=structured,
+    )
+    result["file_type"] = file_ext[1:].upper()
+    result["size"] = len(content)
+    return result
 
 
-async def upload_job_description(user_id: str, text: Optional[str] = None, url: Optional[str] = None) -> dict:
-    """Upload a job description from text or URL."""
-    from datetime import datetime
+async def upload_job_description_file(user_id: str, filename: str, content: bytes) -> dict:
+    """Upload a JD from PDF or DOCX."""
+    file_ext = Path(filename).suffix.lower()
+    if file_ext not in {".pdf", ".docx"}:
+        raise ValueError("Invalid file type. Please upload a PDF or DOCX file.")
 
-    if not text and not url:
-        raise ValueError("Either 'text' or 'url' must be provided")
+    mime_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+    parsed_text = parse_document_content(filename, content)
+    if not parsed_text.strip():
+        raise ValueError("Job description could not be parsed")
 
-    if text and url:
-        raise ValueError("Provide either 'text' or 'url', not both")
+    storage_path = f"job-descriptions/{user_id}/{uuid.uuid4().hex}{file_ext}"
+    await upload_bytes_to_storage(storage_path, content, mime_type)
 
-    # Fetch content from URL if provided
-    if url:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(url, timeout=30.0)
-            response.raise_for_status()
-
-        soup = BeautifulSoup(response.text, "html.parser")
-        for tag in soup(["script", "style", "nav", "header", "footer"]):
-            tag.decompose()
-        text = soup.get_text(separator="\n", strip=True)
-        source_type = "url"
-    else:
-        source_type = "text"
-
-    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    safe_filename = f"jd_{timestamp}.txt"
-
-    user_dir = get_user_dir(user_id)
-    jd_dir = user_dir / "job-descriptions"
-    jd_dir.mkdir(exist_ok=True)
-    file_path = jd_dir / safe_filename
-
-    with open(file_path, "w", encoding="utf-8") as f:
-        f.write(text)
-
-    doc_id = uuid.uuid4().hex
-    content_preview = text[:200] + "..." if len(text) > 200 else text
-
-    document = {
-        "document_id": doc_id,
-        "filename": safe_filename,
-        "type": "job_description",
-        "source_type": source_type,
-        "content": text,
-        "content_preview": content_preview,
-        "created_at": datetime.utcnow().isoformat(),
-        "user_id": user_id,
-        "file_path": str(file_path)
-    }
-    documents_db[doc_id] = document
-
-    return {
-        "document_id": doc_id,
-        "content_preview": content_preview,
-        "source_type": source_type,
-        "filename": safe_filename
-    }
+    result = await _create_document(
+        user_id=user_id,
+        kind="job_description",
+        source_type="file",
+        filename=filename,
+        mime_type=mime_type,
+        storage_path=storage_path,
+        source_url=None,
+        raw_text=parsed_text,
+    )
+    result["content_preview"] = parsed_text[:200]
+    return result
 
 
-def list_documents(user_id: str) -> list:
-    """List all documents for a user."""
+async def upload_job_description_text(user_id: str, text: str) -> dict:
+    """Persist pasted JD text."""
+    normalized_text = normalize_extracted_text(text)
+    if not normalized_text:
+        raise ValueError("Job description text is required")
+
+    result = await _create_document(
+        user_id=user_id,
+        kind="job_description",
+        source_type="text",
+        filename="job-description.txt",
+        mime_type="text/plain",
+        storage_path=None,
+        source_url=None,
+        raw_text=normalized_text,
+    )
+    result["content_preview"] = normalized_text[:200]
+    return result
+
+
+async def upload_job_description_url(user_id: str, url: str) -> dict:
+    """Fetch, normalize, and persist JD text from a URL."""
+    async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+        response = await client.get(url)
+        response.raise_for_status()
+
+    soup = BeautifulSoup(response.text, "html.parser")
+    for tag in soup(["script", "style", "nav", "header", "footer", "noscript"]):
+        tag.decompose()
+    text = soup.get_text(separator="\n", strip=True)
+    normalized_text = normalize_extracted_text(text)
+    if not normalized_text:
+        raise ValueError("No readable content found at the provided URL")
+
+    result = await _create_document(
+        user_id=user_id,
+        kind="job_description",
+        source_type="url",
+        filename="job-description-url.txt",
+        mime_type="text/plain",
+        storage_path=None,
+        source_url=url,
+        raw_text=normalized_text,
+    )
+    result["content_preview"] = normalized_text[:200]
+    return result
+
+
+async def list_documents(user_id: str) -> list:
+    """List documents for a user."""
+    documents = await db.get_documents_by_user(user_id)
     return [
         {
-            "document_id": doc["document_id"],
+            "document_id": doc["id"],
             "filename": doc["filename"],
-            "type": doc["type"],
-            "file_type": doc.get("file_type", ""),
-            "created_at": doc["created_at"]
+            "type": doc["kind"],
+            "source_type": doc["source_type"],
+            "file_type": Path(doc["filename"] or "").suffix.replace(".", "").upper(),
+            "created_at": doc["created_at"],
         }
-        for doc in documents_db.values()
-        if doc.get("user_id") == user_id
+        for doc in documents
     ]
 
 
-def get_document(document_id: str) -> Optional[dict]:
-    """Get a document by ID."""
-    return documents_db.get(document_id)
+async def get_document(document_id: str) -> Optional[dict]:
+    """Get a single document."""
+    return await db.get_document_by_id(document_id)
 
 
-def delete_document(document_id: str, user_id: str) -> bool:
-    """Delete a document. Returns True if successful."""
-    if document_id not in documents_db:
+async def delete_document(document_id: str, user_id: str) -> bool:
+    """Delete a document if it belongs to the current user."""
+    document = await db.get_document_by_id(document_id)
+    if not document or document["user_id"] != user_id:
         return False
-
-    doc = documents_db[document_id]
-    if doc.get("user_id") != user_id:
-        return False
-
-    file_path = Path(doc.get("file_path", ""))
-    if file_path.exists():
-        try:
-            file_path.unlink()
-        except Exception:
-            pass
-
-    del documents_db[document_id]
-    return True
+    return await db.delete_document(document_id)

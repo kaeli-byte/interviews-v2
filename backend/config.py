@@ -14,6 +14,7 @@ class Settings:
     # Gemini
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
     MODEL: str = os.getenv("MODEL", "gemini-3.1-flash-live-preview")
+    MODEL_EXTRACT: str = os.getenv("MODEL_EXTRACT", "gemini-2.5-flash")
 
     # JWT
     SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "dev-secret-change-in-prod")
@@ -30,7 +31,8 @@ class Settings:
     # CORS
     CORS_ORIGINS: list = ["*"]
 
-    # Frontend paths - Vercel builds Next.js output here
+    # Frontend (for redirects)
+    FRONTEND_DEV_URL: str = "http://localhost:3000"
     FRONTEND_BUILD_PATH: str = "frontend/.next/server/app"
 
     # Demo mode
@@ -52,12 +54,6 @@ class Settings:
     def frontend_dist_exists(self) -> bool:
         """Check if Next.js build exists."""
         return Path(self.FRONTEND_BUILD_PATH).exists()
-
-    def get_frontend_build_path(self) -> str:
-        """Get the frontend build path."""
-        if Path(self.FRONTEND_BUILD_PATH).exists():
-            return self.FRONTEND_BUILD_PATH
-        return self.FRONTEND_BUILD_PATH
 
 
 settings = Settings()

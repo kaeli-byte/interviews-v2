@@ -4,7 +4,7 @@ import base64
 import json
 import logging
 import traceback
-from typing import Any, Optional
+from typing import Optional
 
 from fastapi import WebSocket, WebSocketDisconnect
 
