@@ -1,3 +1,6 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import { BaseLayout, PageHeader, ContentCard } from "@/components/layouts/base-layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -29,12 +32,22 @@ import {
  * helper components like <PageHeader> and <ContentCard>
  */
 export default function HomePage() {
+  const [userName, setUserName] = useState("User");
+
+  useEffect(() => {
+    // Get user name from localStorage (set by AuthProvider)
+    const name = localStorage.getItem("user_name");
+    if (name) {
+      setUserName(name);
+    }
+  }, []);
+
   return (
     <BaseLayout>
       {/* Page Header - title, description, and action buttons */}
       <PageHeader
         title="Dashboard"
-        description="Welcome back, John Doe"
+        description={`Welcome back, ${userName}`}
         actions={
           <>
             <Button variant="outline">

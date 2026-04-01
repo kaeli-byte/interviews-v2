@@ -1,0 +1,34 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1743297000000,
+      "tag": "0000_setup_interview",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1743379200000,
+      "tag": "0001_documents_content_jsonb",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1743382800000,
+      "tag": "0002_sessions_agent_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1743386400000,
+      "tag": "0003_perf_indexes",
+      "breakpoints": true
+    }
+  ]
+}

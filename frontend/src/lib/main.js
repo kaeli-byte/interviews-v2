@@ -412,7 +412,7 @@ tabBtns.forEach(btn => {
     tabContents.forEach(content => {
       content.classList.add("hidden");
       if (content.id === `${tabName}-tab`) {
-        content.classList.remove("hidden');
+        content.classList.remove("hidden");
       }
     });
 
@@ -502,7 +502,7 @@ if (createContextSubmitBtn) {
       if (typeof documentUploader !== 'undefined') {
         documentUploader.closeContextModal();
       } else {
-        contextModal.classList.add("hidden');
+        contextModal.classList.add("hidden");
       }
 
       // Trigger the interview tab

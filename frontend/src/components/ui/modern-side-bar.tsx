@@ -2,13 +2,15 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { usePathname } from 'next/navigation';
 import { cn } from "@/lib/utils";
+import { supabase } from "@/lib/supabase";
+import { NavUser } from "@/components/ui/nav-user";
 import {
   Home,
   User,
   Settings,
-  LogOut,
   Menu,
   X,
   ChevronLeft,
@@ -48,6 +50,31 @@ export function Sidebar({ className = "", collapsed: controlledCollapsed, onColl
   const [isOpen, setIsOpen] = useState(false);
   const [internalCollapsed, setInternalCollapsed] = useState(false);
   const pathname = usePathname();
+  const router = useRouter();
+
+  // Auth check for route protection (redirects to signin if not authenticated)
+  // NavUser will handle displaying user info
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session?.user) {
+        router.push('/signin');
+      }
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session?.user) {
+        router.push('/signin');
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [router]);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.push('/signin');
+    router.refresh();
+  };
 
   // Use controlled collapsed if provided, otherwise use internal state
   const isCollapsed = controlledCollapsed !== undefined ? controlledCollapsed : internalCollapsed;
@@ -109,10 +136,10 @@ export function Sidebar({ className = "", collapsed: controlledCollapsed, onColl
       {/* Sidebar */}
       <div
         className={`
-          fixed top-0 left-0 h-full border-r border-[var(--glass-border-subtle)] bg-[var(--glass-bg)] backdrop-blur-xl z-40 transition-all duration-300 ease-in-out flex flex-col
+          fixed top-0 left-0 h-screen border-r border-[var(--glass-border-subtle)] bg-[var(--glass-bg)] backdrop-blur-xl z-40 transition-all duration-300 ease-in-out flex flex-col
           ${isOpen ? "translate-x-0" : "-translate-x-full"}
           ${isCollapsed ? "w-28" : "w-72"}
-          md:translate-x-0 md:static md:z-auto
+          md:translate-x-0 md:sticky md:top-0 md:h-screen md:z-40
           ${className}
         `}
       >
@@ -239,64 +266,15 @@ export function Sidebar({ className = "", collapsed: controlledCollapsed, onColl
           </ul>
         </nav>
 
-        {/* Bottom section with profile and logout */}
+        {/* Bottom section with profile using NavUser component */}
         <div className="mt-auto border-t border-[var(--glass-border-subtle)]">
-          {/* Profile Section */}
-          <div className={`border-b border-[var(--glass-border-subtle)] bg-[var(--glass-bg)] ${isCollapsed ? 'py-3 px-2' : 'p-3'}`}>
-            {!isCollapsed ? (
-              <div className="flex items-center px-3 py-2 rounded-xl bg-[var(--glass-bg)] hover:bg-[var(--glass-bg-hover)] transition-colors duration-200 border border-[var(--glass-border-subtle)]">
-                <div className="w-8 h-8 bg-muted rounded-full flex items-center justify-center">
-                  <span className="text-foreground font-medium text-sm">JD</span>
-                </div>
-                <div className="flex-1 min-w-0 ml-2.5">
-                  <p className="text-sm font-medium text-foreground truncate">John Doe</p>
-                  <p className="text-xs text-muted-foreground truncate">Senior Administrator</p>
-                </div>
-                <div className="w-2 h-2 bg-green-500 rounded-full ml-2" title="Online" />
-              </div>
-            ) : (
-              <div className="flex justify-center">
-                <div className="relative">
-                  <div className="w-9 h-9 bg-muted rounded-full flex items-center justify-center">
-                    <span className="text-foreground font-medium text-sm">JD</span>
-                  </div>
-                  <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-background" />
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Logout Button */}
-          <div className="p-3">
-            <button
-              onClick={() => {
-                // TODO: Implement logout
-                console.log("Logout clicked");
-              }}
-              className={`
-                w-full flex items-center rounded-xl text-left transition-all duration-200 group
-                text-destructive hover:bg-destructive/10 hover:text-destructive
-                ${isCollapsed ? "justify-center p-2.5" : "space-x-2.5 px-3 py-2.5"}
-              `}
-              title={isCollapsed ? "Logout" : undefined}
-            >
-              <div className="flex items-center justify-center min-w-[24px]">
-                <LogOut className="h-4.5 w-4.5 flex-shrink-0" />
-              </div>
-
-              {!isCollapsed && (
-                <span className="text-sm">Logout</span>
-              )}
-
-              {/* Tooltip for collapsed state */}
-              {isCollapsed && (
-                <div className="absolute left-full ml-2 px-2 py-1 bg-card text-card-foreground text-xs rounded opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap z-50 shadow-lg">
-                  Logout
-                  <div className="absolute left-0 top-1/2 transform -translate-y-1/2 -translate-x-1 w-1.5 h-1.5 bg-card rotate-45" />
-                </div>
-              )}
-            </button>
-          </div>
+          <NavUser
+            collapsed={isCollapsed}
+            onLogout={handleLogout}
+            onProfile={() => router.push('/profile')}
+            onSettings={() => router.push('/settings')}
+            className={isCollapsed ? "px-2 py-3" : "p-3"}
+          />
         </div>
       </div>
 

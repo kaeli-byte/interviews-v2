@@ -1,5 +1,5 @@
-import { FullScreenSignup } from "@/components/ui/full-screen-signup";
+import { redirect } from "next/navigation";
 
 export default function SignupPage() {
-  return <FullScreenSignup />;
+  redirect("/signin");
 }

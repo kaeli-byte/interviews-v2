@@ -1,0 +1,192 @@
+name: Frontend Deploy
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - "frontend/**"
+      - "vercel.json"
+      - ".github/workflows/frontend-deploy.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "frontend/**"
+      - "vercel.json"
+      - ".github/workflows/frontend-deploy.yml"
+
+env:
+  NODE_VERSION: "20"
+
+jobs:
+  lint_frontend:
+    name: lint_frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Run frontend lint
+        working-directory: frontend
+        run: npm run lint
+
+  build_frontend:
+    name: build_frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Create frontend build env
+        run: |
+          echo "NEXT_PUBLIC_SUPABASE_URL=https://test.supabase.co" > frontend/.env.local
+          echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=test-key" >> frontend/.env.local
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+  deploy_preview_frontend:
+    name: deploy_preview_frontend
+    needs:
+      - lint_frontend
+      - build_frontend
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check Vercel token
+        id: check-preview-token
+        run: |
+          if [ -z "${{ secrets.VERCEL_TOKEN }}" ]; then
+            echo "VERCEL_TOKEN not set - skipping preview deploy"
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Install Vercel CLI
+        if: steps.check-preview-token.outputs.skip == 'false'
+        run: npm install -g vercel@latest
+
+      - name: Pull Vercel preview environment
+        if: steps.check-preview-token.outputs.skip == 'false'
+        run: vercel pull --yes --environment=preview --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Build Vercel preview bundle
+        if: steps.check-preview-token.outputs.skip == 'false'
+        run: vercel build --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Deploy preview
+        if: steps.check-preview-token.outputs.skip == 'false'
+        id: deploy
+        run: |
+          url=$(vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }})
+          echo "url=$url" >> $GITHUB_OUTPUT
+
+      - name: Comment preview URL
+        if: steps.check-preview-token.outputs.skip == 'false'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `🔍 **Preview deployed:** ${{ steps.deploy.outputs.url }}`
+            })
+
+  deploy_staging_frontend:
+    name: deploy_staging_frontend
+    needs:
+      - lint_frontend
+      - build_frontend
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
+    environment:
+      name: staging
+      url: https://staging.example.com
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check Vercel token
+        id: check-staging-token
+        run: |
+          if [ -z "${{ secrets.VERCEL_TOKEN }}" ]; then
+            echo "VERCEL_TOKEN not set - skipping staging deploy"
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Install Vercel CLI
+        if: steps.check-staging-token.outputs.skip == 'false'
+        run: npm install -g vercel@latest
+
+      - name: Pull Vercel staging environment
+        if: steps.check-staging-token.outputs.skip == 'false'
+        run: vercel pull --yes --environment=preview --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Build Vercel staging bundle
+        if: steps.check-staging-token.outputs.skip == 'false'
+        run: vercel build --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Deploy staging
+        if: steps.check-staging-token.outputs.skip == 'false'
+        run: vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }}
+
+  deploy_production_frontend:
+    name: deploy_production_frontend
+    needs:
+      - lint_frontend
+      - build_frontend
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment:
+      name: production
+      url: https://example.com
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check Vercel token
+        id: check-production-token
+        run: |
+          if [ -z "${{ secrets.VERCEL_TOKEN }}" ]; then
+            echo "VERCEL_TOKEN not set - skipping production deploy"
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Install Vercel CLI
+        if: steps.check-production-token.outputs.skip == 'false'
+        run: npm install -g vercel@latest
+
+      - name: Pull Vercel production environment
+        if: steps.check-production-token.outputs.skip == 'false'
+        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Build Vercel production bundle
+        if: steps.check-production-token.outputs.skip == 'false'
+        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Deploy production
+        if: steps.check-production-token.outputs.skip == 'false'
+        run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}

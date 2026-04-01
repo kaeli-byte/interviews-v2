@@ -165,11 +165,11 @@ export function BaseLayout({
               />
             )}
 
-            {/* Sidebar wrapper - positioned fixed on mobile, static on desktop */}
+            {/* Sidebar wrapper - sticky on desktop for independent height, fixed on mobile */}
             <div
               className={cn(
                 // Mobile: fixed overlay
-                "md:relative md:translate-x-0 z-50",
+                "md:sticky md:top-0 md:h-screen md:translate-x-0 z-50",
                 isMobile && isSidebarOpen ? "fixed inset-y-0 left-0" : isMobile ? "fixed -translate-x-full" : "",
                 // Transition for smooth animations
                 "transition-all duration-300 ease-in-out"

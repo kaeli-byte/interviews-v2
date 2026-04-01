@@ -1,0 +1,2 @@
+ALTER TABLE sessions
+ADD COLUMN IF NOT EXISTS agent_id uuid REFERENCES agent_configs(id) ON DELETE SET NULL;
